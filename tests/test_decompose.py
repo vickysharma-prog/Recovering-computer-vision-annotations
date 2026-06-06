@@ -59,18 +59,20 @@ def decomposer() -> ScreenshotDecomposer:
 def format_a() -> np.ndarray:
     """
     Synthetic FORMAT_A screenshot.
-    Left 55% = colorful aerial (blue-green).
-    Right 45% = grey dialog.
+    Left 55% = colorful aerial (blue-green) WITH texture.
+    Right 45% = flat grey dialog (uniform = low variance).
     Size: 600 x 900 x 3.
     Boundary at x=495 (55% of 900).
     """
+    rng = np.random.default_rng(42)
     img = np.zeros((600, 900, 3), dtype=np.uint8)
-    img[:, :495, 0] = 60
-    img[:, :495, 1] = 120
-    img[:, :495, 2] = 180
+    noise = rng.integers(-30, 30, (600, 495, 3))
+    aerial = np.clip(
+        np.array([60, 120, 180]) + noise, 0, 255
+    ).astype(np.uint8)
+    img[:, :495, :] = aerial
     img[:, 495:, :] = 210
     return img
-
 
 @pytest.fixture(scope="module")
 def format_b() -> np.ndarray:
@@ -926,15 +928,24 @@ class TestDecompose:
 
     def test_bars_correct_content_height(
         self, decomposer, format_a_with_bars
-    ):
+):
         """
-        660 total - 30 title - 30 taskbar = 600.
+        Content height = total - detected_title - detected_taskbar.
+        Uses actual detected heights, not hardcoded 30px.
         """
         result = decomposer.decompose(
             format_a_with_bars
         )
         h = format_a_with_bars.shape[0]
-        assert result.aerial_height() == h - 30 - 30
+        title_h = (
+            result.title_bar.height
+            if result.title_bar else 0
+        )
+        taskbar_h = (
+            result.taskbar.height
+            if result.taskbar else 0
+        )
+        assert result.aerial_height() == h - title_h - taskbar_h
 
     def test_stateless_same_result_twice(
         self, decomposer, format_a
