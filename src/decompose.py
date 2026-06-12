@@ -3,79 +3,49 @@ Screenshot decomposition for bird annotation recovery.
 
 Splits aerial survey screenshots into two regions:
     - Aerial photograph (contains annotation dots)
-    - Dialog box      (contains species legend)
+    - Dialog box (contains species legend), if present
 
-Two screenshot formats exist in the dataset:
-    FORMAT_A : Aerial photo (left) + dialog box (right)
-    FORMAT_B : Full-frame aerial photo, no dialog
+Pipeline position: Stage 1 of 7
+Input: Raw screenshot (RGB numpy array)
+Output: DecompositionResult dataclass
 
-Pipeline position : Stage 1 of 7
-Input             : Raw screenshot (RGB numpy array)
-Output            : DecompositionResult dataclass
-
-Design notes:
-- 3-method consensus for boundary detection reduces
-    single-method failure modes seen in prototype
-- Variance profile vectorized via sliding_window_view
-    (prototype used Python loop - significantly slower)
-- All thresholds are named constants measured from
-    25 study images, not guessed numbers
-- Returns dataclass not dict for IDE autocomplete
-    and type safety in downstream modules
+Boundary detection uses 3-method consensus:
+    1. Grey profile — first grey column
+    2. Sobel edges — strongest vertical edge
+    3. Variance drop — first low-variance column
+Final boundary = median of 3 candidates.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
+import yaml
 
 logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────
-# CONSTANTS
-# All values measured from 25 study images.
-# Do not change without re-measuring on new data.
+# CONFIG
 # ─────────────────────────────────────────────────────
 
-# Grey pixel detection
-_GREY_LOW: int = 160
-_GREY_HIGH: int = 250
-_GREY_DIFF: int = 20
+def _load_config() -> dict:
+    """Load decomposition config from config.yaml."""
+    config_path = Path(__file__).parent.parent / "config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Config file not found: {config_path}"
+        )
+    with open(config_path) as f:
+        return yaml.safe_load(f)["decompose"]
 
-# Format detection
-_GREY_PCT_THRESHOLD: float = 15.0
-_RIGHT_STRIP_START: float = 0.6
 
-# Boundary search
-_BOUNDARY_MIN: float = 0.35
-_BOUNDARY_MAX: float = 0.70
-_MIN_DIALOG_WIDTH_PX: int = 80
-_LOW_CONFIDENCE: float = 0.3
-_GREY_PROFILE_THRESHOLD: float = 0.25
-_VARIANCE_DROP_RATIO: float = 0.4
-_AERIAL_SAMPLE_START: float = 0.05
-_AERIAL_SAMPLE_END: float = 0.30
-_MIN_WINDOW_SIZE: int = 5
-
-# Edge profile
-_EDGE_MARGIN_TOP: float = 0.1
-_EDGE_MARGIN_BOT: float = 0.9
-
-# Variance profile
-_VARIANCE_STRIP_TOP: float = 0.25
-_VARIANCE_STRIP_BOT: float = 0.75
-_VARIANCE_BLOCK: int = 3
-
-# Bar detection
-_TITLE_BAR_HEIGHTS: tuple[int, ...] = (25, 35, 45)
-_TASKBAR_HEIGHTS: tuple[int, ...] = (25, 35, 45)
-_TITLE_GREY_THRESHOLD: float = 50.0
-_TASKBAR_GREY_THRESHOLD: float = 60.0
+_CONFIG = _load_config()
 
 
 # ─────────────────────────────────────────────────────
@@ -88,8 +58,8 @@ class BarInfo:
     Detected UI bar metadata.
 
     Attributes:
-        y      : Top y coordinate in original image
-        height : Bar height in pixels
+        y: Top y coordinate in original image
+        height: Bar height in pixels
     """
     y: int
     height: int
@@ -101,18 +71,18 @@ class DecompositionResult:
     Result of screenshot decomposition.
 
     Attributes:
-        format             : 'FORMAT_A' or 'FORMAT_B'
-        format_confidence  : Detection confidence [0,1]
-        aerial             : Aerial region (H,W,3) RGB
-        dialog             : Dialog region (H,W,3) or None
-        boundary_x         : Dialog start x-pixel or None
-        boundary_confidence: Boundary confidence [0,1]
-        aerial_bbox        : (x,y,w,h) in original coords
-        title_bar          : Title bar info or None
-        taskbar            : Taskbar info or None
+        has_dialog: True if dialog box present
+        detection_confidence: Confidence in dialog detection [0,1]
+        aerial: Aerial region (H,W,3) RGB
+        dialog: Dialog region (H,W,3) or None
+        boundary_x: Dialog start x-pixel or None
+        boundary_confidence: Boundary location confidence [0,1]
+        aerial_bbox: (x,y,w,h) in original image coords
+        title_bar: Title bar info or None
+        taskbar: Taskbar info or None
     """
-    format: str
-    format_confidence: float
+    has_dialog: bool
+    detection_confidence: float
     aerial: np.ndarray
     dialog: Optional[np.ndarray]
     boundary_x: Optional[int]
@@ -129,18 +99,12 @@ class DecompositionResult:
         )
         return (
             f"DecompositionResult("
-            f"format={self.format!r}, "
-            f"confidence={self.format_confidence:.3f}, "
+            f"has_dialog={self.has_dialog}, "
+            f"confidence={self.detection_confidence:.3f}, "
             f"aerial={self.aerial.shape}, "
             f"dialog={dialog_shape}, "
-            f"boundary_x={self.boundary_x}, "
-            f"boundary_confidence="
-            f"{self.boundary_confidence:.3f})"
+            f"boundary_x={self.boundary_x})"
         )
-
-    def has_dialog(self) -> bool:
-        """True if screenshot contains a dialog box."""
-        return self.dialog is not None
 
     def aerial_width(self) -> int:
         """Width of aerial region in pixels."""
@@ -150,41 +114,17 @@ class DecompositionResult:
         """Height of aerial region in pixels."""
         return int(self.aerial.shape[0])
 
-    def aerial_fraction(self, total_width: int) -> float:
-        """
-        Fraction of total width occupied by aerial.
-
-        Args:
-            total_width: Full screenshot width in pixels
-
-        Returns:
-            Float in (0, 1]. Expected ~0.50 for FORMAT_A.
-
-        Raises:
-            ValueError: If total_width <= 0
-        """
-        if total_width <= 0:
-            raise ValueError(
-                f"total_width must be positive, "
-                f"got {total_width}"
-            )
-        return self.aerial_width() / total_width
-
 
 # ─────────────────────────────────────────────────────
-# PURE HELPER FUNCTIONS
-# No state. Fully testable in isolation.
+# HELPER FUNCTIONS
 # ─────────────────────────────────────────────────────
 
 def _is_grey(img_rgb: np.ndarray) -> np.ndarray:
     """
     Boolean mask: True where pixels are grey.
 
-    Grey defined as:
-        R ≈ G ≈ B (within _GREY_DIFF)
-        Brightness in [_GREY_LOW, _GREY_HIGH]
-
-    Vectorized. No Python loops.
+    Grey defined as R ≈ G ≈ B within threshold,
+    brightness in configured range.
 
     Args:
         img_rgb: RGB image (H, W, 3) uint8
@@ -198,108 +138,62 @@ def _is_grey(img_rgb: np.ndarray) -> np.ndarray:
     brightness = img_rgb[:, :, 0]
 
     return (
-        (np.abs(r - g) < _GREY_DIFF) &
-        (np.abs(g - b) < _GREY_DIFF) &
-        (brightness > _GREY_LOW) &
-        (brightness < _GREY_HIGH)
+        (np.abs(r - g) < _CONFIG["grey_diff"]) &
+        (np.abs(g - b) < _CONFIG["grey_diff"]) &
+        (brightness > _CONFIG["grey_low"]) &
+        (brightness < _CONFIG["grey_high"])
     )
 
 
 def _smooth1d(signal: np.ndarray, ks: int) -> np.ndarray:
-    """
-    1D moving average smoothing.
-
-    Args:
-        signal: 1D numpy array
-        ks    : Kernel size (must be odd, >= 3)
-
-    Returns:
-        Smoothed signal, same length
-    """
+    """1D moving average smoothing."""
     return np.convolve(
         signal, np.ones(ks) / ks, mode='same'
     )
 
 
 def _kernel_size(image_width: int) -> int:
-    """
-    Compute odd smoothing kernel from image width.
-
-    Returns:
-        Odd integer >= 5
-    """
+    """Compute odd smoothing kernel size from image width."""
     k = max(image_width // 50, 5)
     return k if k % 2 == 1 else k + 1
 
 
 def _grey_profile(img_rgb: np.ndarray) -> np.ndarray:
-    """
-    Per-column grey pixel fraction.
-
-    High → grey (dialog).
-    Low  → colorful (aerial).
-
-    Returns:
-        1D float32 array shape (W,) in [0, 1]
-    """
-    return _is_grey(img_rgb).mean(axis=0).astype(
-        np.float32
-    )
+    """Per-column grey pixel fraction."""
+    return _is_grey(img_rgb).mean(axis=0).astype(np.float32)
 
 
 def _edge_profile(img_rgb: np.ndarray) -> np.ndarray:
-    """
-    Per-column Sobel edge strength.
-
-    Uses middle 80% of height to avoid UI bars.
-    High → strong vertical edge (likely boundary).
-
-    Returns:
-        1D float32 array shape (W,)
-    """
+    """Per-column Sobel edge strength."""
     h = img_rgb.shape[0]
     gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
     sobel = np.abs(
         cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
     )
-    y1 = int(h * _EDGE_MARGIN_TOP)
-    y2 = int(h * _EDGE_MARGIN_BOT)
-    return sobel[y1:y2, :].mean(axis=0).astype(
-        np.float32
-    )
+    y1 = int(h * _CONFIG["edge_margin_top"])
+    y2 = int(h * _CONFIG["edge_margin_bot"])
+    return sobel[y1:y2, :].mean(axis=0).astype(np.float32)
 
 
 def _variance_profile(img_rgb: np.ndarray) -> np.ndarray:
     """
-    Per-column color variance over middle 50% of height.
-
-    High → colorful aerial.
-    Low  → uniform grey dialog.
+    Per-column color variance over middle region.
 
     Vectorized via sliding_window_view (NumPy >= 1.20).
-    Falls back to explicit loop on older NumPy.
-
-    Args:
-        img_rgb: RGB image (H, W, 3)
-
-    Returns:
-        1D float32 array shape (W,)
+    Falls back to loop on older NumPy.
     """
     h, w = img_rgb.shape[:2]
-    y1 = int(h * _VARIANCE_STRIP_TOP)
-    y2 = int(h * _VARIANCE_STRIP_BOT)
+    y1 = int(h * _CONFIG["variance_strip_top"])
+    y2 = int(h * _CONFIG["variance_strip_bot"])
     strip = img_rgb[y1:y2, :, :].astype(np.float32)
 
-    b = _VARIANCE_BLOCK
+    b = _CONFIG["variance_block"]
     var = np.zeros(w, dtype=np.float32)
 
     if w <= 2 * b:
         return var
 
     try:
-        # Vectorized: NumPy >= 1.20
-        # Per-channel sliding window std
-        # wins shape: (H_strip, W-2b, 2b)
         per_ch = np.zeros((3, w), dtype=np.float32)
         for c in range(3):
             wins = np.lib.stride_tricks.sliding_window_view(
@@ -307,17 +201,14 @@ def _variance_profile(img_rgb: np.ndarray) -> np.ndarray:
                 window_shape=2 * b,
                 axis=1,
             )
-            # std over height(0) and window(2)
             per_ch[c, b: b + wins.shape[1]] = (
                 wins.std(axis=(0, 2))
             )
         var = per_ch.mean(axis=0)
 
     except AttributeError:
-        # Fallback: NumPy < 1.20
         logger.debug(
-            "sliding_window_view unavailable, "
-            "using loop fallback"
+            "sliding_window_view unavailable, using fallback"
         )
         for x in range(b, w - b):
             block = strip[:, x - b: x + b + 1, :]
@@ -329,13 +220,7 @@ def _variance_profile(img_rgb: np.ndarray) -> np.ndarray:
 def _validate_image(
     img_rgb: object, caller: str
 ) -> None:
-    """
-    Validate non-empty (H, W, 3) RGB numpy array.
-
-    Raises:
-        TypeError : Not np.ndarray
-        ValueError: Wrong shape or empty
-    """
+    """Validate (H, W, 3) RGB numpy array."""
     if not isinstance(img_rgb, np.ndarray):
         raise TypeError(
             f"{caller}(): expected np.ndarray, "
@@ -360,122 +245,91 @@ class ScreenshotDecomposer:
     """
     Splits aerial survey screenshots into aerial + dialog.
 
-    Background:
-        The annotation tool baked colored dots directly
-        into screenshots alongside a species count dialog.
-        This class separates the two regions so downstream
-        modules can process each independently:
-        detect.py  → finds dots in aerial
-        species.py → parses legend in dialog
+    The annotation tool baked colored dots into screenshots
+    alongside a species count dialog. This class separates
+    the two regions for independent processing.
 
-    Format detection:
-        FORMAT_A → right 40% is grey (dialog present)
-        FORMAT_B → no grey region (full-frame aerial)
-
-    Boundary detection (FORMAT_A only):
-        3-method consensus:
-        1. Grey profile  — first grey column
-        2. Sobel edges   — strongest vertical edge
-        3. Variance drop — first low-variance column
-        Final boundary = median of 3 candidates.
-
-    Thread safety:
-        Stateless. Safe to reuse across images/threads.
+    Thread safety: Stateless, safe to reuse.
 
     Example:
         >>> decomposer = ScreenshotDecomposer()
-        >>> img = cv2.cvtColor(
-        ...     cv2.imread("screenshot.png"),
-        ...     cv2.COLOR_BGR2RGB
-        ... )
-        >>> result = decomposer.decompose(img)
+        >>> result = decomposer.decompose(img_rgb)
         >>> aerial = result.aerial
     """
 
-    # ─────────────────────────────────────────────
-    # PUBLIC API
-    # ─────────────────────────────────────────────
-
     def decompose(
-        self, img_rgb: np.ndarray
+        self,
+        img_rgb: np.ndarray,
+        expect_dialog: bool | None = None,
     ) -> DecompositionResult:
         """
-        Decompose screenshot into aerial + dialog.
+        Decompose screenshot into aerial + dialog regions.
 
         Args:
             img_rgb: Full screenshot (H,W,3) uint8 RGB
+            expect_dialog: If True/False, skip auto-detection
+                            and use provided value directly.
+                            If None (default), auto-detect from image.
 
         Returns:
             DecompositionResult
 
         Raises:
-            TypeError : img_rgb not np.ndarray
+            TypeError: img_rgb not np.ndarray
             ValueError: Wrong shape or empty
         """
         _validate_image(img_rgb, "decompose")
 
         h, w = img_rgb.shape[:2]
-        fmt, fmt_conf = self.detect_format(img_rgb)
         title_bar, taskbar = self.detect_bars(img_rgb)
 
         y_start = title_bar.height if title_bar else 0
         y_end = taskbar.y if taskbar else h
         content = img_rgb[y_start:y_end, :, :]
 
+        if expect_dialog is not None:
+            has_dialog = expect_dialog
+            conf = 1.0
+        else:
+            has_dialog, conf = self._detect_dialog_presence(
+                img_rgb
+            )
+
         logger.info(
-            "decompose | %dx%d | format=%s "
-            "conf=%.2f | content=[%d:%d]",
-            w, h, fmt, fmt_conf, y_start, y_end,
+            "decompose | %dx%d | has_dialog=%s conf=%.2f",
+            w, h, has_dialog, conf,
         )
 
-        if fmt == 'FORMAT_A':
-            return self._split_format_a(
-                content, fmt_conf,
+        if has_dialog:
+            return self._split_with_dialog(
+                content, conf,
                 title_bar, taskbar,
                 y_start, y_end, w,
             )
-        return self._build_format_b(
-            content, fmt_conf,
+        return self._build_no_dialog(
+            content, conf,
             title_bar, taskbar,
             y_start, y_end, w,
         )
 
-    def detect_format(
+    def _detect_dialog_presence(
         self, img_rgb: np.ndarray
-    ) -> tuple[str, float]:
-        """
-        Classify as FORMAT_A or FORMAT_B.
-
-        Args:
-            img_rgb: Screenshot (H,W,3) uint8 RGB
-
-        Returns:
-            (format_str, confidence)
-        """
-        _validate_image(img_rgb, "detect_format")
-
+    ) -> tuple[bool, float]:
+        """Auto-detect if dialog box is present."""
         w = img_rgb.shape[1]
         right = img_rgb[
-            :, int(w * _RIGHT_STRIP_START):, :
+            :, int(w * _CONFIG["right_strip_start"]):, :
         ]
-        grey_pct = float(
-            _is_grey(right).mean() * 100.0
-        )
+        grey_pct = float(_is_grey(right).mean() * 100.0)
 
-        if grey_pct > _GREY_PCT_THRESHOLD:
+        if grey_pct > _CONFIG["grey_pct_threshold"]:
             conf = min(grey_pct / 50.0, 1.0)
-            logger.debug(
-                "FORMAT_A grey=%.1f%% conf=%.2f",
-                grey_pct, conf,
-            )
-            return 'FORMAT_A', conf
+            logger.debug("Dialog detected: grey=%.1f%%", grey_pct)
+            return True, conf
 
         conf = min((50.0 - grey_pct) / 50.0, 1.0)
-        logger.debug(
-            "FORMAT_B grey=%.1f%% conf=%.2f",
-            grey_pct, conf,
-        )
-        return 'FORMAT_B', conf
+        logger.debug("No dialog: grey=%.1f%%", grey_pct)
+        return False, conf
 
     def find_dialog_boundary(
         self, img_rgb: np.ndarray
@@ -483,12 +337,8 @@ class ScreenshotDecomposer:
         """
         Find x where aerial ends, dialog begins.
 
-        3-method consensus (grey + edge + variance).
+        Uses 3-method consensus (grey + edge + variance).
         Boundary constrained to [35%, 70%] of width.
-        Dialog minimum: 80px.
-
-        Args:
-            img_rgb: Content region (bars removed)
 
         Returns:
             (boundary_x, confidence)
@@ -506,7 +356,7 @@ class ScreenshotDecomposer:
         boundary_x = int(np.median(candidates))
 
         logger.debug(
-            "boundary grey=%d edge=%d var=%d → %d",
+            "boundary candidates: grey=%d edge=%d var=%d → %d",
             m1, m2, m3, boundary_x,
         )
 
@@ -518,10 +368,7 @@ class ScreenshotDecomposer:
         self, img_rgb: np.ndarray
     ) -> tuple[Optional[BarInfo], Optional[BarInfo]]:
         """
-        Detect title bar (top) and taskbar (bottom).
-
-        Args:
-            img_rgb: Full screenshot RGB array
+        Detect title bar and taskbar.
 
         Returns:
             (title_bar, taskbar) BarInfo or None each
@@ -534,21 +381,21 @@ class ScreenshotDecomposer:
         )
 
     # ─────────────────────────────────────────────
-    # PRIVATE — BOUNDARY
+    # PRIVATE METHODS
     # ─────────────────────────────────────────────
 
     def _boundary_grey(
         self, img_rgb: np.ndarray, w: int, ks: int
     ) -> int:
-        """Method 1: First grey column > threshold."""
+        """Method 1: First grey column above threshold."""
         profile = _smooth1d(_grey_profile(img_rgb), ks)
-        lo = int(w * _BOUNDARY_MIN)
-        hi = int(w * _BOUNDARY_MAX)
+        lo = int(w * _CONFIG["boundary_min"])
+        hi = int(w * _CONFIG["boundary_max"])
         for x in range(lo, hi):
             window = profile[x: min(x + 20, hi)]
             if (
-                len(window) >= _MIN_WINDOW_SIZE
-                and window.mean() > _GREY_PROFILE_THRESHOLD
+                len(window) >= _CONFIG["min_window_size"]
+                and window.mean() > _CONFIG["grey_profile_threshold"]
             ):
                 return x
         return w // 2
@@ -556,10 +403,10 @@ class ScreenshotDecomposer:
     def _boundary_edge(
         self, img_rgb: np.ndarray, w: int
     ) -> int:
-        """Method 2: Column with max Sobel strength."""
+        """Method 2: Strongest vertical edge."""
         profile = _edge_profile(img_rgb)
-        lo = int(w * _BOUNDARY_MIN)
-        hi = int(w * _BOUNDARY_MAX)
+        lo = int(w * _CONFIG["boundary_min"])
+        hi = int(w * _CONFIG["boundary_max"])
         segment = profile[lo:hi]
         if segment.size == 0:
             return w // 2
@@ -568,25 +415,23 @@ class ScreenshotDecomposer:
     def _boundary_variance(
         self, img_rgb: np.ndarray, w: int, ks: int
     ) -> int:
-        """Method 3: First column below variance threshold."""
-        profile = _smooth1d(
-            _variance_profile(img_rgb), ks
-        )
+        """Method 3: First low-variance column."""
+        profile = _smooth1d(_variance_profile(img_rgb), ks)
         if profile.max() == 0.0:
             return w // 2
 
-        lo = int(w * _BOUNDARY_MIN)
-        hi = int(w * _BOUNDARY_MAX)
+        lo = int(w * _CONFIG["boundary_min"])
+        hi = int(w * _CONFIG["boundary_max"])
         aerial_mean = profile[
-            int(w * _AERIAL_SAMPLE_START):
-            int(w * _AERIAL_SAMPLE_END)
+            int(w * _CONFIG["aerial_sample_start"]):
+            int(w * _CONFIG["aerial_sample_end"])
         ].mean()
-        threshold = aerial_mean * _VARIANCE_DROP_RATIO
+        threshold = aerial_mean * _CONFIG["variance_drop_ratio"]
 
         for x in range(lo, hi):
             window = profile[x: min(x + 15, hi)]
             if (
-                len(window) >= _MIN_WINDOW_SIZE
+                len(window) >= _CONFIG["min_window_size"]
                 and window.mean() < threshold
             ):
                 return x
@@ -598,55 +443,40 @@ class ScreenshotDecomposer:
         candidates: list[int],
         w: int,
     ) -> tuple[int, float]:
-        """Validate boundary, compute confidence."""
+        """Validate boundary and compute confidence."""
         out_of_range = not (
-            w * _BOUNDARY_MIN
+            w * _CONFIG["boundary_min"]
             <= boundary_x
-            <= w * _BOUNDARY_MAX
+            <= w * _CONFIG["boundary_max"]
         )
         too_narrow = (
-            (w - boundary_x) < _MIN_DIALOG_WIDTH_PX
+            (w - boundary_x) < _CONFIG["min_dialog_width_px"]
         )
 
         if out_of_range or too_narrow:
             logger.warning(
-                "boundary %d invalid "
-                "(out_of_range=%s too_narrow=%s) "
-                "→ center fallback",
+                "Invalid boundary %d, using center fallback",
                 boundary_x,
-                out_of_range,
-                too_narrow,
             )
-            return w // 2, _LOW_CONFIDENCE
+            return w // 2, _CONFIG["low_confidence"]
 
-        spread = float(
-            max(candidates) - min(candidates)
-        )
+        spread = float(max(candidates) - min(candidates))
         confidence = max(
-            _LOW_CONFIDENCE,
+            _CONFIG["low_confidence"],
             1.0 - spread / (w * 0.15),
         )
         return boundary_x, round(confidence, 3)
-
-    # ─────────────────────────────────────────────
-    # PRIVATE — BAR DETECTION
-    # ─────────────────────────────────────────────
 
     @staticmethod
     def _find_top_bar(
         img_rgb: np.ndarray,
     ) -> Optional[BarInfo]:
         """Detect title bar at image top."""
-        for bar_h in _TITLE_BAR_HEIGHTS:
+        for bar_h in _CONFIG["title_bar_heights"]:
             strip = img_rgb[:bar_h, :, :]
-            grey_pct = float(
-                _is_grey(strip).mean() * 100
-            )
-            if grey_pct > _TITLE_GREY_THRESHOLD:
-                logger.debug(
-                    "title bar h=%d grey=%.1f%%",
-                    bar_h, grey_pct,
-                )
+            grey_pct = float(_is_grey(strip).mean() * 100)
+            if grey_pct > _CONFIG["title_grey_threshold"]:
+                logger.debug("Title bar: h=%d", bar_h)
                 return BarInfo(y=0, height=bar_h)
         return None
 
@@ -655,88 +485,72 @@ class ScreenshotDecomposer:
         img_rgb: np.ndarray, h: int
     ) -> Optional[BarInfo]:
         """Detect taskbar at image bottom."""
-        for bar_h in _TASKBAR_HEIGHTS:
+        for bar_h in _CONFIG["taskbar_heights"]:
             strip = img_rgb[h - bar_h:, :, :]
-            grey_pct = float(
-                _is_grey(strip).mean() * 100
-            )
-            if grey_pct > _TASKBAR_GREY_THRESHOLD:
-                logger.debug(
-                    "taskbar h=%d grey=%.1f%%",
-                    bar_h, grey_pct,
-                )
-                return BarInfo(
-                    y=h - bar_h, height=bar_h
-                )
+            grey_pct = float(_is_grey(strip).mean() * 100)
+            if grey_pct > _CONFIG["taskbar_grey_threshold"]:
+                logger.debug("Taskbar: h=%d", bar_h)
+                return BarInfo(y=h - bar_h, height=bar_h)
         return None
 
-    # ─────────────────────────────────────────────
-    # PRIVATE — RESULT BUILDERS
-    # ─────────────────────────────────────────────
-
-    def _split_format_a(
+    def _split_with_dialog(
         self,
         content: np.ndarray,
-        fmt_conf: float,
+        conf: float,
         title_bar: Optional[BarInfo],
         taskbar: Optional[BarInfo],
         y_start: int,
         y_end: int,
         orig_w: int,
     ) -> DecompositionResult:
-        """Build result for FORMAT_A."""
+        """Build result when dialog is present."""
         bx, bx_conf = self.find_dialog_boundary(content)
         aerial = content[:, :bx, :]
         dialog = content[:, bx:, :]
 
         logger.info(
-            "FORMAT_A bx=%d conf=%.2f "
-            "aerial=%dx%d dialog=%dx%d",
-            bx, bx_conf,
+            "With dialog: aerial=%dx%d dialog=%dx%d",
             aerial.shape[1], aerial.shape[0],
             dialog.shape[1], dialog.shape[0],
         )
 
         return DecompositionResult(
-            format='FORMAT_A',
-            format_confidence=round(fmt_conf, 3),
+            has_dialog=True,
+            detection_confidence=round(conf, 3),
             aerial=aerial,
             dialog=dialog,
             boundary_x=bx,
             boundary_confidence=bx_conf,
-            aerial_bbox=(
-                0, y_start, bx, y_end - y_start
-            ),
+            aerial_bbox=(0, y_start, bx, y_end - y_start),
             title_bar=title_bar,
             taskbar=taskbar,
         )
 
     @staticmethod
-    def _build_format_b(
+    def _build_no_dialog(
         content: np.ndarray,
-        fmt_conf: float,
+        conf: float,
         title_bar: Optional[BarInfo],
         taskbar: Optional[BarInfo],
         y_start: int,
         y_end: int,
         orig_w: int,
     ) -> DecompositionResult:
-        """Build result for FORMAT_B."""
+        """Build result when no dialog present."""
         logger.info(
-            "FORMAT_B aerial=%dx%d (full frame)",
+            "No dialog: aerial=%dx%d",
             content.shape[1], content.shape[0],
         )
 
         return DecompositionResult(
-            format='FORMAT_B',
-            format_confidence=round(fmt_conf, 3),
+            has_dialog=False,
+            detection_confidence=round(conf, 3),
             aerial=content,
             dialog=None,
             boundary_x=None,
             boundary_confidence=0.0,
             aerial_bbox=(
-                0, y_start,
-                orig_w, y_end - y_start,
+                0, y_start, orig_w, y_end - y_start
             ),
             title_bar=title_bar,
             taskbar=taskbar,
