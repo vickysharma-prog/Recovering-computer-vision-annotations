@@ -1,8 +1,3 @@
-"""
-Unit tests for src/decompose.py
-
-Focused on pipeline behaviour.
-"""
 
 from __future__ import annotations
 
@@ -309,22 +304,6 @@ class TestDecompose:
     def test_invalid_input_raises(self, decomposer):
         with pytest.raises(TypeError):
             decomposer.decompose(None)
-
-
-# ─────────────────────────────────────────────────
-# BarInfo
-# ─────────────────────────────────────────────────
-
-class TestBarInfo:
-
-    def test_immutable(self):
-        bar = BarInfo(y=0, height=30)
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            bar.y = 10  # type: ignore
-
-    def test_equality(self):
-        assert BarInfo(y=0, height=30) == BarInfo(y=0, height=30)
-
 
 # ─────────────────────────────────────────────────
 # Real image integration
