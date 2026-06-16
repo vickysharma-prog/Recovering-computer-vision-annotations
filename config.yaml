@@ -1,0 +1,39 @@
+# Configuration for screenshot decomposition
+
+decompose:
+  # Grey pixel detection (R ≈ G ≈ B)
+  grey_low: 160
+  grey_high: 250
+  grey_diff: 20
+
+  # Dialog presence detection
+  grey_pct_threshold: 15.0
+  right_strip_start: 0.6
+
+  # Boundary search constraints
+  boundary_min: 0.35
+  boundary_max: 0.70
+  min_dialog_width_px: 80
+  low_confidence: 0.3
+
+  # Grey profile detection
+  grey_profile_threshold: 0.25
+
+  # Variance profile detection
+  variance_drop_ratio: 0.4
+  aerial_sample_start: 0.05
+  aerial_sample_end: 0.30
+  min_window_size: 5
+  variance_strip_top: 0.25
+  variance_strip_bot: 0.75
+  variance_block: 3
+
+  # Edge detection margins
+  edge_margin_top: 0.1
+  edge_margin_bot: 0.9
+
+  # UI bar detection
+  title_bar_heights: [25, 35, 45]
+  taskbar_heights: [25, 35, 45]
+  title_grey_threshold: 50.0
+  taskbar_grey_threshold: 60.0
