@@ -82,6 +82,10 @@ pytest tests/ --tb=short
 - Use float32 not bfloat16 — bfloat16 silently corrupts DeepForest training
 - Use scale_y for both axes in coordinate mapping — scale_x is wrong due to aerial subregion cropping
 - uint8 subtraction overflows — always cast to int16 first
+- Text filter disabled in detect.py — colony-row birds match text-alignment heuristics and get wrongly removed
+- Red HSV wraps around 180° — always use two ranges [0,20] and [160,180]
+- Vegetation boost applies to green channel only — do not boost all colors
+- detect.py expects RGB input — BGR input silently produces wrong detections
 
 ## Boundaries
 ✅ Always: Load config from config.yaml, one test file per module
