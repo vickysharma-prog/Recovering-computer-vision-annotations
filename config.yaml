@@ -15,6 +15,8 @@ decompose:
   boundary_max: 0.70
   min_dialog_width_px: 80
   low_confidence: 0.3
+  confidence_spread_denom: 0.25
+  safe_boundary_min_pct: 0.45
 
   # Grey profile detection
   grey_profile_threshold: 0.25
@@ -92,3 +94,25 @@ detect:
 
   # Species matching
   max_rel_diff: 10.0
+
+legend:
+  # Marker detection in the dialog legend (colored-glyph anchoring)
+  blob_sat_min: 90       # strict: anchor rows, avoid window-chrome colors
+  marker_sat_min: 70     # looser: read color inside an already-located cell
+  marker_val_min: 55
+  blob_area_min: 6        # min connected-component area (px) for a marker
+  blob_area_max: 700      # max colored-blob area in the screenshot scan
+  marker_band_pad: 5
+
+  # Row grid (Windows list-view rows are evenly pitched)
+  row_pitch_min: 6.0      # smallest valid row gap (px)
+  row_pitch_max: 60.0     # largest valid row gap (px)
+
+  # Shape classification of marker glyphs
+  fg_grey_delta: 28       # grey marker vs grey row background
+  fill_filled: 0.55       # bbox fill ratio above which a glyph is "filled"
+  square_extent: 0.6      # corner occupancy for square vs circle
+
+  # Glyph template extraction (markers upscaled so shape is analyzable)
+  glyph_upscale: 48       # upscale target px (z = round(target / cell_side))
+  template_size: 24

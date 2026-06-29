@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# pyrefly: ignore [missing-import]
 import cv2
 import numpy as np
 import pytest
@@ -189,7 +190,7 @@ class TestSelectByCount:
         ]
 
     def test_top_n_selected(self):
-        selected, _ = _select_by_count(
+        selected, _, _ = _select_by_count(
             {"red": self._make_dots("red", 20)},
             {"LAGU": "red"},
             {"LAGU": 10},
@@ -198,7 +199,7 @@ class TestSelectByCount:
 
     def test_highest_score_dots_selected(self):
         """Top-N must pick highest scoring dots."""
-        selected, _ = _select_by_count(
+        selected, _, _ = _select_by_count(
             {"red": self._make_dots("red", 10)},
             {"LAGU": "red"},
             {"LAGU": 3},
@@ -207,7 +208,7 @@ class TestSelectByCount:
         assert scores == sorted(scores, reverse=True)
 
     def test_species_written_to_selected_dots(self):
-        selected, _ = _select_by_count(
+        selected, _, _ = _select_by_count(
             {"red": self._make_dots("red", 5)},
             {"LAGU": "red"},
             {"LAGU": 5},
@@ -215,12 +216,25 @@ class TestSelectByCount:
         assert all(d.species == "LAGU" for d in selected)
 
     def test_unmatched_species_zero_detected(self):
-        _, per_species = _select_by_count(
+        _, per_species, _ = _select_by_count(
             {"red": self._make_dots("red", 10)},
             {},
             {"LAGU": 10},
         )
         assert per_species["LAGU"]["detected"] == 0
+
+    def test_category_counts_handled_as_metadata(self):
+        """category_counts are stored in per_category metadata but not assigned to dots."""
+        selected, _, per_cat = _select_by_count(
+            {"red": self._make_dots("red", 100)},
+            {"BRPE": "red"},
+            {"BRPE": 50},
+            {"BRPE_WBN": 30, "BRPE_OtherAdultsInColony": 20},
+        )
+        assert all(d.category is None for d in selected)
+        assert "BRPE_WBN" in per_cat
+        assert "BRPE_OtherAdultsInColony" in per_cat
+        assert per_cat["BRPE_WBN"]["assigned"] == 0
 
 
 # ─────────────────────────────────────────────────

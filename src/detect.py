@@ -57,6 +57,7 @@ class DetectedDot:
         area: Blob area in pixels
         circularity: Shape circularity [0, 1]
         from_split: True if extracted via cluster splitting
+        category: Annotation category ('WBN', 'Site', etc.)
     """
     cx: float
     cy: float
@@ -66,6 +67,7 @@ class DetectedDot:
     area: int
     circularity: float
     from_split: bool = False
+    category: Optional[str] = None
 
 
 @dataclass
@@ -81,6 +83,7 @@ class DetectionResult:
         vegetation_pct: Green coverage estimate [0, 100]
         green_s_boost: Saturation boost applied to green channel
         per_species: Per-species breakdown dict
+        per_category: Per-category breakdown dict
         species_color_map: species -> color assignment
         color_counts_raw: Raw dot counts before selection
         status: 'ok', 'zero_birds', or 'empty_image'
@@ -92,6 +95,7 @@ class DetectionResult:
     vegetation_pct: float
     green_s_boost: int
     per_species: dict[str, dict]
+    per_category: dict[str, dict]
     species_color_map: dict[str, str]
     color_counts_raw: dict[str, int]
     status: str
@@ -256,6 +260,7 @@ class DotDetector:
         self,
         aerial_rgb: np.ndarray,
         csv_counts: Optional[dict[str, int]] = None,
+        category_counts: Optional[dict[str, int]] = None,
     ) -> DetectionResult:
         """
         Detect annotation dots in aerial photograph.
@@ -266,6 +271,10 @@ class DotDetector:
             csv_counts: Per-species expected counts from CSV.
                         Drives precision via top-N selection.
                         Returns zero detections if None or empty.
+            category_counts: Per-category expected counts from CSV.
+                        Keys like 'BRPE_WBN', 'BRPE_Site'.
+                        When provided, selected dots receive category
+                        labels proportionally.
 
         Returns:
             DetectionResult
@@ -301,8 +310,9 @@ class DotDetector:
             color_counts, csv_counts
         )
 
-        all_dots, per_species = _select_by_count(
-            color_dots, species_color_map, csv_counts
+        all_dots, per_species, per_category = _select_by_count(
+            color_dots, species_color_map, csv_counts,
+            category_counts,
         )
 
         total_expected = sum(csv_counts.values())
@@ -324,6 +334,7 @@ class DotDetector:
             vegetation_pct=round(veg_pct, 1),
             green_s_boost=green_boost,
             per_species=per_species,
+            per_category=per_category,
             species_color_map=species_color_map,
             color_counts_raw=color_counts,
             status="ok",
@@ -600,15 +611,19 @@ def _select_by_count(
     color_dots: dict[str, list[DetectedDot]],
     species_color_map: dict[str, str],
     csv_counts: dict[str, int],
-) -> tuple[list[DetectedDot], dict[str, dict]]:
+    category_counts: Optional[dict[str, int]] = None,
+) -> tuple[list[DetectedDot], dict[str, dict], dict[str, dict]]:
     """
     Select top-N dots per species, N = CSV expected count.
 
     Dots ranked by contrast score. Species and color
     written into new DetectedDot instances (frozen dataclass).
+    When category_counts is provided, selected dots are
+    assigned categories proportionally.
     """
     all_dots: list[DetectedDot] = []
     per_species: dict[str, dict] = {}
+    per_category: dict[str, dict] = {}
 
     for species, expected in csv_counts.items():
         if species not in species_color_map:
@@ -625,18 +640,19 @@ def _select_by_count(
         available = color_dots.get(color, [])
         selected = sorted(available, key=lambda d: d.score, reverse=True)[:expected]
 
-        all_dots.extend(
-            DetectedDot(
-                cx=d.cx, cy=d.cy,
-                color=color,
-                species=species,
-                score=d.score,
-                area=d.area,
-                circularity=d.circularity,
-                from_split=d.from_split,
+        for d in selected:
+            all_dots.append(
+                DetectedDot(
+                    cx=d.cx, cy=d.cy,
+                    color=color,
+                    species=species,
+                    score=d.score,
+                    area=d.area,
+                    circularity=d.circularity,
+                    from_split=d.from_split,
+                    category=None,
+                )
             )
-            for d in selected
-        )
 
         per_species[species] = {
             "expected": expected,
@@ -646,7 +662,18 @@ def _select_by_count(
             "ratio": round(len(selected) / max(expected, 1), 3),
         }
 
-    return all_dots, per_species
+        # Build per_category stats (metadata only)
+        if category_counts:
+            prefix = f"{species}_"
+            for cat_key, cat_expected in category_counts.items():
+                if cat_key.startswith(prefix):
+                    cat_name = cat_key[len(prefix):]
+                    per_category[cat_key] = {
+                        "expected": cat_expected,
+                        "assigned": 0, # Cannot reliably assign without shape detection
+                    }
+
+    return all_dots, per_species, per_category
 
 
 def _empty_result(status: str) -> DetectionResult:
@@ -659,6 +686,7 @@ def _empty_result(status: str) -> DetectionResult:
         vegetation_pct=0.0,
         green_s_boost=0,
         per_species={},
+        per_category={},
         species_color_map={},
         color_counts_raw={},
         status=status,

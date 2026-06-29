@@ -77,6 +77,7 @@ class DecompositionResult:
         dialog: Dialog region (H,W,3) or None
         boundary_x: Dialog start x-pixel or None
         boundary_confidence: Boundary location confidence [0,1]
+        boundary_candidates: Raw (grey, edge, variance) x values or None
         aerial_bbox: (x,y,w,h) in original image coords
         title_bar: Title bar info or None
         taskbar: Taskbar info or None
@@ -87,6 +88,7 @@ class DecompositionResult:
     dialog: Optional[np.ndarray]
     boundary_x: Optional[int]
     boundary_confidence: float
+    boundary_candidates: Optional[tuple[int, int, int]]
     aerial_bbox: tuple[int, int, int, int]
     title_bar: Optional[BarInfo]
     taskbar: Optional[BarInfo]
@@ -333,7 +335,7 @@ class ScreenshotDecomposer:
 
     def find_dialog_boundary(
         self, img_rgb: np.ndarray
-    ) -> tuple[int, float]:
+    ) -> tuple[int, float, tuple[int, int, int]]:
         """
         Find x where aerial ends, dialog begins.
 
@@ -341,7 +343,7 @@ class ScreenshotDecomposer:
         Boundary constrained to [35%, 70%] of width.
 
         Returns:
-            (boundary_x, confidence)
+            (boundary_x, confidence, (grey_x, edge_x, variance_x))
         """
         _validate_image(img_rgb, "find_dialog_boundary")
 
@@ -360,9 +362,10 @@ class ScreenshotDecomposer:
             m1, m2, m3, boundary_x,
         )
 
-        return self._validate_boundary(
+        bx, conf = self._validate_boundary(
             boundary_x, candidates, w
         )
+        return bx, conf, (m1, m2, m3)
 
     def detect_bars(
         self, img_rgb: np.ndarray
@@ -461,9 +464,10 @@ class ScreenshotDecomposer:
             return w // 2, _CONFIG["low_confidence"]
 
         spread = float(max(candidates) - min(candidates))
+        denom = w * _CONFIG["confidence_spread_denom"]
         confidence = max(
             _CONFIG["low_confidence"],
-            1.0 - spread / (w * 0.15),
+            1.0 - spread / denom,
         )
         return boundary_x, round(confidence, 3)
 
@@ -503,8 +507,27 @@ class ScreenshotDecomposer:
         y_end: int,
         orig_w: int,
     ) -> DecompositionResult:
-        """Build result when dialog is present."""
-        bx, bx_conf = self.find_dialog_boundary(content)
+        """Build result when dialog is present.
+
+        Applies safe-boundary fallback when confidence is low
+        and the detected boundary looks too aggressive (< 45%
+        of width). Grey dialog pixels score low in contrast and
+        are naturally filtered by the detector.
+        """
+        bx, bx_conf, raw_candidates = self.find_dialog_boundary(
+            content
+        )
+
+        safe_min = _CONFIG["safe_boundary_min_pct"]
+        if bx_conf < 0.5 and bx < int(orig_w * safe_min):
+            safe_bx = int(orig_w * 0.50)
+            logger.warning(
+                "Low-confidence boundary %d (%.2f) < %d%% width, "
+                "widening to %d",
+                bx, bx_conf, int(safe_min * 100), safe_bx,
+            )
+            bx = safe_bx
+
         aerial = content[:, :bx, :]
         dialog = content[:, bx:, :]
 
@@ -521,6 +544,7 @@ class ScreenshotDecomposer:
             dialog=dialog,
             boundary_x=bx,
             boundary_confidence=bx_conf,
+            boundary_candidates=raw_candidates,
             aerial_bbox=(0, y_start, bx, y_end - y_start),
             title_bar=title_bar,
             taskbar=taskbar,
@@ -549,6 +573,7 @@ class ScreenshotDecomposer:
             dialog=None,
             boundary_x=None,
             boundary_confidence=0.0,
+            boundary_candidates=None,
             aerial_bbox=(
                 0, y_start, orig_w, y_end - y_start
             ),
