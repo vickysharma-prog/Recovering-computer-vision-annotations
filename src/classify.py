@@ -15,6 +15,7 @@ Output: list[AerialDot], each assigned to a legend class.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -26,13 +27,34 @@ from scipy.ndimage import maximum_filter
 from src.legend import (
     LegendEntry,
     _read_glyph,
+    _central_component,
     _classify_shape,
     _is_marker_like,
     _name_hue,
+    _circular_mean_hue,
+    _SAT_MIN,
+    _VAL_MIN,
     canonical_template,
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Per-image colour anchoring ──────────────────────────────────────────────
+# Josh's ask: assign each aerial dot to the dialog's OWN palette, not fixed
+# global hue bins. Step-0 measurement (scripts/diagnose_marker_colors.py) showed
+# hue barely varies within a colour group; the class-separating signal (e.g.
+# light vs dark red) lives in BRIGHTNESS. So the anchor space must include value.
+#
+# For each aerial dot we compute a colour vector, then take as candidates the
+# legend entries whose colour is within _COLOR_MARGIN of the closest one (a
+# self-adapting cluster: same-colour classes stay together, a far light/dark
+# variant drops out). Shape/template then separates same-colour candidates.
+# Dots whose closest legend colour is beyond _COLOR_REJECT are left unassigned
+# (off-palette noise) instead of being forced onto a wrong class.
+_COLOR_SPACE = "lab"     # "lab" (perceptual, uniform threshold) or "hsv"
+_COLOR_MARGIN = 22.0     # candidates within (min_dist + margin) of the dot
+_COLOR_REJECT = 45.0     # closest colour beyond this -> unassigned
+_UNSET = object()        # cache sentinel (avoids array-truthiness on None/ndarray)
 
 
 @dataclass
@@ -45,6 +67,7 @@ class AerialDot:
     area: int
     template: np.ndarray
     quality: float = 0.0          # how dot-like (saturation/contrast); for ranking
+    color_vec: Optional[np.ndarray] = None   # colour signature for palette anchoring
     # Filled in by assignment:
     species: Optional[str] = None
     category: Optional[str] = None
@@ -140,6 +163,14 @@ def _dot_centers(
                 centers.append((x0 + lx, y0 + ly))
         else:
             centers.append((cx, cy))
+
+    # Re-apply exclude to ALL centers: cluster-split sub-dots near the dialog
+    # edge can land inside the box even when their parent component's centroid
+    # was outside it (the per-component check above misses those).
+    if exclude is not None:
+        ex, ey, ew, eh = exclude
+        centers = [(cx, cy) for (cx, cy) in centers
+                   if not (ex <= cx <= ex + ew and ey <= cy <= ey + eh)]
     return centers, single_area
 
 
@@ -150,6 +181,160 @@ def _template_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if na == 0 or nb == 0:
         return 0.0
     return float(av @ bv / (na * nb))
+
+
+_HUE_TOL = 14   # deg (OpenCV 0-180) around the dot's own hue kept as marker
+# Background removal on by default; set BG_REMOVAL=0 to A/B against Stage 1.
+_BG_REMOVAL = os.environ.get("BG_REMOVAL", "1") != "0"
+# Shape matching: intensity-template NCC, no shape-name boost — the config the
+# self-recovery ablation selected (scripts/eval_matching.py). The coarse shape
+# LABEL (star often collapses to "plus"/"circle" at aerial scale) reinforced
+# wrong classes, so the boost is off; the template carries the signal. Toggles
+# kept for reproducing the ablation:
+#   SHAPE_MATCH=cosine   -> old binary-mask cosine
+#   SHAPE_BOOST=1        -> re-enable the +0.35 shape-name agreement boost
+_SHAPE_MATCH = os.environ.get("SHAPE_MATCH", "ncc")   # "ncc" | "cosine"
+_SHAPE_BOOST = 0.35 if os.environ.get("SHAPE_BOOST", "0") != "0" else 0.0
+# Colour anchoring on by default; COLOR_ANCHOR=0 reverts to global colour-name
+# grouping (the pre-rework baseline) for real-aerial before/after measurement.
+_COLOR_ANCHOR = os.environ.get("COLOR_ANCHOR", "1") != "0"
+
+
+def _color_masked_glyph(
+    glyph: np.ndarray, hsv_up: np.ndarray, hue: Optional[float],
+) -> np.ndarray:
+    """
+    Background removal: restrict the glyph to pixels of its OWN colour.
+
+    Josh's ask — "extract the glyph colour and mask using that, otherwise it's
+    going to try and match grey." Saturation-only extraction still admits
+    off-colour background (grey halo, nearby vegetation) that bloats a small
+    marker into a blob and drowns thin arms. We keep only pixels within
+    _HUE_TOL of the dot's dominant hue, so the template encodes the marker's
+    shape, not the patch. Grey markers (hue is None) are returned unchanged.
+    Falls back to the original glyph if masking would erase the marker.
+    """
+    if hue is None or not _BG_REMOVAL:
+        return glyph
+    H = hsv_up[:, :, 0].astype(np.int16)
+    S = hsv_up[:, :, 1]
+    V = hsv_up[:, :, 2]
+    dh = np.abs(H - int(round(hue)))
+    dh = np.minimum(dh, 180 - dh)
+    consistent = (dh <= _HUE_TOL) & (S > _SAT_MIN) & (V > _VAL_MIN)
+    m = ((glyph > 0) & consistent).astype(np.uint8)
+    if int(m.sum()) < 3:
+        return glyph
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    return _central_component(m, 1)
+
+
+def _intensity_template(mask: np.ndarray, hsv_up: np.ndarray) -> np.ndarray:
+    """
+    Canonical template weighted by marker INTENSITY, not a hard binary mask.
+
+    Josh's ask — "match the actual patch, not a binary mask." A binary
+    threshold erases a marker's faint anti-aliased arms (a star/plus reads as a
+    blob). Weighting the colour-masked glyph by its value channel keeps that
+    graded structure, so NCC can tell a plus from a filled circle at low res.
+    """
+    m = mask > 0
+    if not m.any():
+        return canonical_template(mask)
+    v = hsv_up[:, :, 2].astype(np.float32) / 255.0
+    return canonical_template(m.astype(np.float32) * v)
+
+
+def _legend_shape_tmpl(e: LegendEntry) -> np.ndarray:
+    """Intensity template for a legend marker (cached on the entry)."""
+    t = getattr(e, "_shape_tmpl", _UNSET)
+    if t is _UNSET:
+        glyph, hue, hsv_up = _read_glyph(e.marker, sat_only=True)
+        t = _intensity_template(_color_masked_glyph(glyph, hsv_up, hue), hsv_up)
+        e._shape_tmpl = t
+    return t
+
+
+def _ncc(a: np.ndarray, b: np.ndarray) -> float:
+    """Normalized cross-correlation (mean-subtracted) of two equal-size templates."""
+    av = a.ravel().astype(np.float32) - float(a.mean())
+    bv = b.ravel().astype(np.float32) - float(b.mean())
+    na, nb = float(np.linalg.norm(av)), float(np.linalg.norm(bv))
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(av @ bv / (na * nb))
+
+
+def _shape_score(dot_tmpl: np.ndarray, entry: LegendEntry) -> float:
+    """Shape similarity between an aerial dot and a legend entry's marker."""
+    if _SHAPE_MATCH == "cosine":
+        return _template_similarity(dot_tmpl, entry.template)
+    return _ncc(dot_tmpl, _legend_shape_tmpl(entry))
+
+
+def _color_vec_from_glyph(
+    glyph: np.ndarray, hsv_up: np.ndarray,
+) -> Optional[np.ndarray]:
+    """
+    Colour signature of a marker/dot from its own coloured pixels.
+
+    Measured identically for legend markers and aerial dots so they live in the
+    same space. Returns None for a grey glyph (no saturated pixels). In "lab"
+    space the vector is (L, a, b) (OpenCV 8-bit); in "hsv" it is
+    (S, V, cos·k, sin·k) — hue as cos/sin so red's 0/180 wrap is handled and
+    the discriminative S/V axes dominate.
+    """
+    gm = glyph > 0
+    if not gm.any():
+        return None
+    s = hsv_up[:, :, 1]
+    v = hsv_up[:, :, 2]
+    coloured = gm & (s > _SAT_MIN) & (v > _VAL_MIN)
+    if int(coloured.sum()) < 3:
+        return None
+    if _COLOR_SPACE == "lab":
+        bgr = cv2.cvtColor(hsv_up, cv2.COLOR_HSV2BGR)
+        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+        return np.array([lab[:, :, c][coloured].mean() for c in range(3)],
+                        dtype=np.float32)
+    hue = _circular_mean_hue(hsv_up[:, :, 0][coloured])
+    rad = hue * (np.pi / 90.0)
+    k = 128.0
+    return np.array([float(s[coloured].mean()), float(v[coloured].mean()),
+                     float(np.cos(rad) * k), float(np.sin(rad) * k)],
+                    dtype=np.float32)
+
+
+def _color_vec_from_rgb(rgb: np.ndarray) -> Optional[np.ndarray]:
+    """Colour signature of a marker crop (used to build the legend palette)."""
+    if rgb is None or rgb.size == 0:
+        return None
+    glyph, _hue, hsv_up = _read_glyph(rgb, sat_only=True)
+    return _color_vec_from_glyph(glyph, hsv_up)
+
+
+def _color_dist(a: np.ndarray, b: np.ndarray) -> float:
+    """Euclidean distance between two colour vectors (same space)."""
+    return float(np.linalg.norm(a - b))
+
+
+def _legend_palette(
+    legend: list[LegendEntry],
+) -> list[tuple[LegendEntry, Optional[np.ndarray]]]:
+    """
+    Each legend entry paired with its colour vector (None for grey markers).
+
+    Cached on the entry (`_color_vec`) so repeated assign_classes calls on the
+    same legend don't re-read every marker.
+    """
+    palette = []
+    for e in legend:
+        vec = getattr(e, "_color_vec", _UNSET)
+        if vec is _UNSET:
+            vec = _color_vec_from_rgb(e.marker)
+            e._color_vec = vec
+        palette.append((e, vec))
+    return palette
 
 
 def detect_dots(
@@ -178,13 +363,17 @@ def detect_dots(
             continue
         glyph, hue, hsv_up = _read_glyph(crop, sat_only=True)
         color = _name_hue(hue) if hue is not None else "grey"
+        # Background removal: shape/template read from the colour-masked glyph so
+        # grey/off-colour background is not baked into the match signal.
+        cmask = _color_masked_glyph(glyph, hsv_up, hue)
         # Shape is reliable only for isolated, marker-like glyphs.
-        shape = _classify_shape(glyph) if _is_marker_like(glyph) else "unknown"
-        template = canonical_template(glyph)
+        shape = _classify_shape(cmask) if _is_marker_like(cmask, aerial=True) else "unknown"
+        template = _intensity_template(cmask, hsv_up)
         dots.append(AerialDot(
             cx=cx, cy=cy, color=color, shape=shape,
             area=int(single_area), template=template,
             quality=_dot_quality(glyph, hsv_up),
+            color_vec=_color_vec_from_glyph(glyph, hsv_up),
         ))
     return dots
 
@@ -205,29 +394,55 @@ def _dot_quality(glyph: np.ndarray, hsv_up: np.ndarray) -> float:
     return float((s * v).mean() / (255.0 * 255.0))
 
 
+def _color_candidates(
+    d: AerialDot, palette: list[tuple[LegendEntry, Optional[np.ndarray]]],
+) -> list[LegendEntry]:
+    """
+    Legend entries whose colour matches the dot's, via the dialog's own palette.
+
+    A dot with no colour (grey) matches grey legend entries. Otherwise we take
+    every entry within _COLOR_MARGIN of the closest one — a self-adapting
+    colour cluster: same-colour classes stay together, a far light/dark variant
+    drops out. Returns [] (dot left unassigned) when the closest legend colour
+    is beyond _COLOR_REJECT (off-palette noise).
+    """
+    if not _COLOR_ANCHOR:
+        # Ablation baseline: old global colour-NAME grouping (pre-rework).
+        return [e for e, _v in palette if e.color == d.color]
+    if d.color_vec is None:
+        return [e for e, v in palette if v is None]
+    dists = [(e, _color_dist(d.color_vec, v)) for e, v in palette if v is not None]
+    if not dists:
+        return []
+    dmin = min(dd for _, dd in dists)
+    if dmin > _COLOR_REJECT:
+        return []
+    return [e for e, dd in dists if dd <= dmin + _COLOR_MARGIN]
+
+
 def assign_classes(
     dots: list[AerialDot], legend: list[LegendEntry],
 ) -> list[AerialDot]:
     """
-    Assign each dot to a legend class: colour first, shape (template) to break
-    ties among same-colour classes. Mutates and returns `dots`.
+    Assign each dot to a legend class: colour first (anchored to the dialog's
+    own palette), then shape (template) to break ties among same-colour classes.
+    Mutates and returns `dots`.
     """
-    by_color: dict[str, list[LegendEntry]] = {}
-    for e in legend:
-        by_color.setdefault(e.color, []).append(e)
+    palette = _legend_palette(legend)
 
     for d in dots:
-        cands = by_color.get(d.color)
+        cands = _color_candidates(d, palette)
         if not cands:
-            continue  # colour not in legend -> leave unassigned
+            continue  # off-palette / colour absent -> leave unassigned
         if len(cands) == 1:
             best, score = cands[0], 1.0
         else:
-            # Template correlation, boosted when the dot's own classified shape
-            # name agrees with the candidate's (a strong independent signal).
+            # Intensity-template NCC, boosted when the dot's own classified
+            # shape name agrees with the candidate's (a strong independent
+            # signal). Both are tunable via env for ablation.
             scored = [
-                (e, _template_similarity(d.template, e.template)
-                 + (0.35 if d.shape == e.shape else 0.0))
+                (e, _shape_score(d.template, e)
+                 + (_SHAPE_BOOST if d.shape == e.shape else 0.0))
                 for e in cands
             ]
             best, score = max(scored, key=lambda t: t[1])

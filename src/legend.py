@@ -24,6 +24,7 @@ recovered mapping.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -523,25 +524,35 @@ def _has_enclosed_hole(sub: np.ndarray) -> bool:
     return int(ff.sum()) >= 1
 
 
-def _is_marker_like(glyph: np.ndarray) -> bool:
+def _is_marker_like(glyph: np.ndarray, aerial: bool = False) -> bool:
     """
     True if the isolated glyph mask is a plausible marker.
 
     `glyph` is the upscaled central-component mask from `_glyph_mask`. We
     require a compact blob whose area is a sane fraction of the cell and that
     does not span the entire cell (border bleed).
+
+    `aerial`: the `frac > 0.85` and full-cell-span guards exist to reject
+    border-bleed in a *dialog cell*, where a real marker sits inside a grey
+    cell with margin. An aerial dot has no surrounding cell, so it legitimately
+    fills its own tight crop — those two guards then reject the majority of real
+    dots (measured: A 31% pass, C 49% pass at default crop). With aerial=True
+    they are relaxed: only near-total fill (>0.97, i.e. no shape boundary at
+    all) and the noise / off-centre guards remain.
     """
     ys, xs = np.where(glyph > 0)
     if xs.size == 0:
         return False
     h, w = glyph.shape
     frac = xs.size / float(h * w)
-    if frac < 0.02 or frac > 0.85:
+    hi = 0.97 if aerial else 0.85
+    if frac < 0.02 or frac > hi:
         return False
-    bw = xs.max() - xs.min() + 1
-    bh = ys.max() - ys.min() + 1
-    if bw >= w and bh >= h:
-        return False
+    if not aerial:
+        bw = xs.max() - xs.min() + 1
+        bh = ys.max() - ys.min() + 1
+        if bw >= w and bh >= h:
+            return False
     # Centroid near cell center.
     if abs(xs.mean() - w / 2) > w * 0.42 or abs(ys.mean() - h / 2) > h * 0.42:
         return False
@@ -679,7 +690,7 @@ def locate_dialog(rgb: np.ndarray) -> Optional[tuple[int, int, int, int]]:
         return None
     msize = float(np.median([z[2] for z in blobs]))
 
-    best = None  # (inliers, marker_x, y0, y1, pitch)
+    best = None  # (inliers, marker_x, y0, y1, pitch, panel_right)
     for i in range(1, n):
         a = stats[i, cv2.CC_STAT_AREA]
         bw = stats[i, cv2.CC_STAT_WIDTH]
@@ -693,13 +704,19 @@ def locate_dialog(rgb: np.ndarray) -> Optional[tuple[int, int, int, int]]:
         inside = [z for z in blobs if x <= z[0] <= x + bw and y <= z[1] <= y + bh]
         inl, mx, y0, y1, pitch = _column_ladder(inside, msize)
         if inl >= 4 and (best is None or inl > best[0]):
-            best = (inl, mx, y0, y1, pitch)
+            best = (inl, mx, y0, y1, pitch, x + bw)
 
     if best is None or best[1] is None:
         return None
-    inl, mx, y0, y1, pitch = best
+    inl, mx, y0, y1, pitch, panel_right = best
     x0 = int(max(0, mx - msize * 11))
-    x1 = int(min(w, mx + msize * 30))  # wide enough to include the Count column
+    # Right edge: the marker-relative offset (mx + msize*30) falls short when the
+    # Name column is wide -- long class names push the Count column further right
+    # (e.g. image B: 'BRPE chick nest w/o adult'), so a fixed offset cropped the
+    # entire Count column and made the counts look blank. Extend to the grey
+    # panel's own right edge when that is wider; the panel is flat grey, so this
+    # never reaches into the (textured) aerial.
+    x1 = int(min(w, max(mx + msize * 30, panel_right)))
     yy0 = int(max(0, y0 - pitch * 3.5))
     yy1 = int(min(h, y1 + pitch * 2.5))
     return (x0, yy0, x1 - x0, yy1 - yy0)
@@ -925,6 +942,36 @@ def _best_match(token: str, vocab: list[str], max_dist: int) -> Optional[str]:
     return best if best_d <= max_dist else None
 
 
+def _find_species(tokens: list[str], vocab: list[str]) -> tuple[
+    Optional[str], Optional[int], str
+]:
+    """
+    Locate a species code in the leading tokens, tolerant of OCR punctuation and
+    species+category gluing. Small-font OCR routinely glues the 4-letter code to
+    punctuation or to the next word ('__LAGU' -> LAGU, 'NECO-AD' -> NECO,
+    'BRPEWBN' -> BRPE), which inflates the edit distance past max_dist=1 so the
+    raw first token never matches.
+
+    We strip non-alpha noise from each of the first two tokens and try the whole
+    cleaned token, then its 4-letter prefix (every species code is 4 letters).
+
+    Returns (species, token_index, glued_remainder) where glued_remainder is the
+    leftover category text that shared the species token (e.g. 'WBN' from
+    'BRPEWBN'), or ''.
+    """
+    for idx in range(min(2, len(tokens))):
+        a = re.sub(r"[^A-Za-z]", "", tokens[idx])
+        if len(a) < 4:
+            continue
+        m = _best_match(a, vocab, max_dist=1)
+        if m:
+            return m, idx, ""
+        m = _best_match(a[:4], vocab, max_dist=1)
+        if m:
+            return m, idx, a[4:]
+    return None, None, ""
+
+
 def _parse_class_text(text: str, species_vocab: list[str]) -> tuple[
     Optional[str], Optional[str], Optional[str], Optional[int]
 ]:
@@ -947,8 +994,13 @@ def _parse_class_text(text: str, species_vocab: list[str]) -> tuple[
     if not tokens:
         return None, None, None, count
 
-    species = _best_match(tokens[0], species_vocab, max_dist=1)
-    rest = tokens[1:] if species else tokens
+    species, sidx, glued = _find_species(tokens, species_vocab)
+    if species is not None:
+        rest = tokens[sidx + 1:]
+        if glued:
+            rest = [glued] + rest
+    else:
+        rest = tokens
     category = None
     if rest:
         joined = " ".join(rest)
@@ -960,6 +1012,28 @@ def _parse_class_text(text: str, species_vocab: list[str]) -> tuple[
     name_bits = [b for b in (species, category) if b]
     class_name = " ".join(name_bits) if name_bits else (raw or None)
     return class_name, species, category, count
+
+
+def _column_gridlines(gray: np.ndarray) -> list[int]:
+    """
+    X-positions of the table's vertical gridlines (full-height dark columns).
+
+    The legend table is marker | Name | Count separated by thin vertical
+    borders that are dark over (nearly) the full dialog height, unlike text.
+    Used to split the Name strip from the Count strip robustly at any width --
+    the old marker-relative offset (cx + pitch*8) fails when long class names
+    widen the Name column (image B), which cropped the Count column entirely.
+    Nearby columns are merged (double borders / scrollbar edges).
+    """
+    frac = (gray < 130).mean(axis=0)
+    cols = list(np.where(frac >= 0.7)[0])
+    groups: list[list[int]] = []
+    for x in cols:
+        if groups and x - groups[-1][-1] <= 6:
+            groups[-1].append(int(x))
+        else:
+            groups.append([int(x)])
+    return [int(np.mean(g)) for g in groups]
 
 
 def attach_class_names(
@@ -993,21 +1067,39 @@ def attach_class_names(
     pitch = float(np.median(np.diff(cys))) if len(cys) > 1 else 14.0
     half = max(4, int(pitch * 0.45))
 
+    # Split Name from Count at the table's own gridlines. Columns run
+    # [table-left | Name(+marker) | Count | (scrollbar)], so left-to-right the
+    # gridlines are: [0]=table left, [1]=Name|Count divider, [2]=Count right
+    # border, [3]=scrollbar (B only). Counting from the LEFT is robust to the
+    # scrollbar; counting from the right mis-picks the empty margin on B. Adapts
+    # to any Name-column width (fixes image B, where long names pushed the Count
+    # column past the old marker-relative offset).
+    gridlines = _column_gridlines(gray)
+    if len(gridlines) >= 3 and gridlines[2] - gridlines[1] >= 15:
+        name_count_div, right_border = gridlines[1], gridlines[2]
+    else:
+        name_count_div, right_border = None, dw
+
     for e in entries:
         y0 = max(0, int(e.cy) - half)
         y1 = min(dh, int(e.cy) + half + 1)
         x0 = min(dw - 1, int(e.cx) + int(pitch * 0.7))
-        strip = gray[y0:y1, x0:dw]
+        # Bound the name strip at the Name|Count divider so count digits do not
+        # corrupt the name OCR (and vice-versa).
+        name_r = name_count_div if (name_count_div and name_count_div > x0 + 5) else dw
+        strip = gray[y0:y1, x0:name_r]
         if strip.size == 0 or strip.shape[1] < 8:
             continue
         text = _ocr_line(ocr, strip)
         name, sp, cat, cnt = _parse_class_text(text, species_vocab)
-        # Dedicated digit-only pass on the right (Count) column — more reliable
-        # than picking the trailing number out of the mixed name+count line.
-        # The count column sits past the (wide) name column, right of the
-        # marker. The digit whitelist filters out any name letters that intrude.
-        cx0 = min(dw - 1, int(e.cx) + int(pitch * 8))
-        cnt2 = _ocr_count(ocr, gray[y0:y1, cx0:dw])
+        # Dedicated digit-only pass on the Count column (digit whitelist). Use
+        # the detected column when available, else fall back to the marker offset.
+        if name_count_div is not None:
+            cstrip = gray[y0:y1, name_count_div + 2:right_border]
+        else:
+            cx0 = min(dw - 1, int(e.cx) + int(pitch * 8))
+            cstrip = gray[y0:y1, cx0:dw]
+        cnt2 = _ocr_count(ocr, cstrip)
         e.class_name, e.species, e.category = name, sp, cat
         e.count = cnt2 if cnt2 is not None else cnt
 
@@ -1030,12 +1122,22 @@ def _ocr_count(ocr, strip: np.ndarray) -> Optional[int]:
     """
     Read the integer in a Count-column strip (digit whitelist).
 
-    An empty read is treated as 0: large counts read reliably, so a blank
-    result corresponds to an empty/near-empty cell (count 0). This lets the
-    top-N selection correctly drop classes the annotator left at zero.
+    For wide strips (> 130 px) the digit is right-justified far from the left
+    edge — the left portion may be class-name text that corrupts OCR even with
+    a digit whitelist.  Clipping to the rightmost 80 px aligns the window with
+    the actual digit.  Narrower strips are left unchanged (right position is
+    already calibrated by pitch*8).
+
+    A blank read is treated as 0 only when the strip has very few dark pixels
+    (truly empty count cells).
     """
     if strip.size == 0 or strip.shape[1] < 6:
         return None
+    # Wide strips: count is right-justified; the left portion is class-name.
+    # Threshold at 145 px: B-style dialogs (185 px) clip, A/C/D (≤ 141 px) do not.
+    if strip.shape[1] > 145:
+        strip = strip[:, -80:]
+
     big = cv2.resize(strip, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     big = cv2.threshold(big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     big = cv2.copyMakeBorder(big, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)

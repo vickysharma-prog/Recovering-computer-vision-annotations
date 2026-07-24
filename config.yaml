@@ -116,3 +116,66 @@ legend:
   # Glyph template extraction (markers upscaled so shape is analyzable)
   glyph_upscale: 48       # upscale target px (z = round(target / cell_side))
   template_size: 24
+
+# Registration of a screenshot against its clean high-resolution original
+# (src/align.py). Feeds difference-based annotation detection.
+align:
+  # Originals are ~4752px wide; SIFT at full size is slow and buys nothing,
+  # since the screenshot is far lower resolution regardless.
+  work_width: 1600
+  max_features: 8000
+  ratio_test: 0.75        # Lowe's ratio for descriptor matching
+  ransac_thresh: 5.0      # px, in work-scale units
+
+  # Quality gate. A silently bad warp is worse than a refusal: it would mark the
+  # whole frame as annotation. Failing here makes the caller fall back to
+  # colour-based detection instead.
+  min_matches: 12
+  min_inliers: 10
+  min_inlier_frac: 0.30
+  max_reproj_err: 3.0     # measured 0.73px on a good pair, so this is generous
+
+  # Below this the homography's perspective row is indistinguishable from zero,
+  # so the simpler similarity fit is used (real pairs are scale+translation).
+  perspective_eps: 1.0e-5
+
+# Difference-based annotation extraction (src/subtract.py).
+subtract:
+  # Compare each pixel against the best match within this radius instead of the
+  # exactly-aligned one. Without it, sub-pixel misregistration makes every
+  # high-contrast edge (birds on sand) read as annotation.
+  shift_radius: 2
+
+  # Weight on Lab's L channel when differencing. Water is the dominant source of
+  # false ink — ripples and glint really do differ between the two renders, and
+  # being textureless the shift search cannot cancel them. Those differences live
+  # in luminance; annotation ink is chromatic. Kept non-zero so grey markers stay
+  # visible. Measured: 8.58% -> 0.87% spurious ink on a coastal frame.
+  luminance_weight: 0.15
+
+  # Threshold = median + mad_k * MAD of the difference, floored at min_diff.
+  # A percentile would force a fixed fraction of pixels through regardless of
+  # how much ink is actually present.
+  mad_k: 8.0
+  min_diff: 14.0          # Lab units
+
+  # Window chrome and the dialog have no counterpart in the original. They are
+  # removed as large solid difference blocks rather than via the dialog locator,
+  # which has its own failure modes.
+  ui_area_frac: 0.004     # fraction of frame above which a blob may be chrome
+  # ...and its pixels must be duller than this. Size alone misfires badly: in a
+  # dense colony the markers merge into one carpet spanning an eighth of the
+  # frame, which was discarded as chrome, throwing away 92% of the annotations on
+  # a 2037-dot image. Measured median saturation separates them cleanly —
+  # dialog 1, open water ~26, marker carpet 70-74.
+  ui_max_sat: 40
+  ui_dilate: 9
+  edge_margin: 2          # guard against shift wrap-around at the border
+
+  # Chroma gate for marker candidates (src/subtract.py -> dot_candidates). An ink
+  # blob whose median screenshot saturation is below this is treated as non-marker
+  # (water glint, mudflat texture, the grey label panel) and dropped BEFORE the
+  # modal-size estimate, which noise would otherwise collapse. Annotation ink is
+  # chromatic by construction. Measured: marker carpet 70-74, clean sparse markers
+  # 169, background residual 7-40 — the floor sits in that gap.
+  marker_sat_min: 50

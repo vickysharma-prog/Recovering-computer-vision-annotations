@@ -34,6 +34,13 @@ def _square_template() -> np.ndarray:
     return canonical_template(np.ones((20, 20), np.uint8))
 
 
+def _triangle_template() -> np.ndarray:
+    m = np.zeros((24, 24), np.uint8)
+    pts = np.array([[12, 3], [3, 20], [21, 20]], np.int32)
+    cv2.fillPoly(m, [pts], 1)
+    return canonical_template(m)
+
+
 def _aerial_with_dots(centers, color=(255, 30, 30)) -> np.ndarray:
     """Low-saturation grey aerial with bright dots (realistic background)."""
     img = np.full((100, 200, 3), 120, np.uint8)
@@ -113,12 +120,22 @@ class TestDetectDots:
 # CLASS ASSIGNMENT
 # ─────────────────────────────────────────────────
 
-def _entry(color, shape, template, name) -> LegendEntry:
-    return LegendEntry(
+# Colour vectors (Lab-ish) far enough apart that RED and BLUE fall outside the
+# palette-anchoring reject radius. Assignment now keys on `color_vec`, not the
+# `color` name string.
+_RED_VEC = np.array([130.0, 185.0, 170.0], np.float32)
+_BLUE_VEC = np.array([90.0, 130.0, 60.0], np.float32)
+
+
+def _entry(color, shape, template, name, vec=_RED_VEC) -> LegendEntry:
+    e = LegendEntry(
         row=0, cy=0.0, cx=0.0, shape=shape, color=color, hue=0.0,
         marker=np.zeros((2, 2, 3), np.uint8), template=template,
         class_name=name, species=name.split()[0], category=shape,
     )
+    e._color_vec = vec        # pre-seed palette cache (marker is a stub here)
+    e._shape_tmpl = template  # pre-seed NCC shape template (marker is a stub)
+    return e
 
 
 class TestAssignClasses:
@@ -126,23 +143,27 @@ class TestAssignClasses:
     def test_single_color_candidate(self):
         e = _entry("red", "circle", _circle_template(), "BRPE WBN")
         d = AerialDot(cx=0, cy=0, color="red", shape="circle",
-                      area=10, template=_circle_template())
+                      area=10, template=_circle_template(), color_vec=_RED_VEC)
         assign_classes([d], [e])
         assert d.class_name == "BRPE WBN"
         assert d.match_score == 1.0
 
     def test_shape_breaks_same_color_tie(self):
+        # Same colour, different shape -> template (NCC) breaks the tie.
+        # Non-uniform shapes (circle vs triangle) so mean-subtracted NCC is
+        # well-defined (a solid square canonical is uniform -> degenerate).
         e1 = _entry("red", "circle", _circle_template(), "RED CIRCLE")
-        e2 = _entry("red", "square", _square_template(), "RED SQUARE")
-        d = AerialDot(cx=0, cy=0, color="red", shape="square",
-                      area=10, template=_square_template())
+        e2 = _entry("red", "triangle", _triangle_template(), "RED TRIANGLE")
+        d = AerialDot(cx=0, cy=0, color="red", shape="triangle",
+                      area=10, template=_triangle_template(), color_vec=_RED_VEC)
         assign_classes([d], [e1, e2])
-        assert d.class_name == "RED SQUARE"
+        assert d.class_name == "RED TRIANGLE"
 
     def test_color_absent_from_legend_unassigned(self):
+        # Dot colour is far from the only legend colour -> off-palette reject.
         e = _entry("red", "circle", _circle_template(), "BRPE WBN")
         d = AerialDot(cx=0, cy=0, color="blue", shape="circle",
-                      area=10, template=_circle_template())
+                      area=10, template=_circle_template(), color_vec=_BLUE_VEC)
         assign_classes([d], [e])
         assert d.class_name is None
 
