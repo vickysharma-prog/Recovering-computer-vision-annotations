@@ -232,3 +232,8 @@ docs/legend_groundtruth.md
 docs/learnings.md
 docs/training_analysis.md
 docs/status_for_josh.html
+docs/TASKS.md
+
+# Local-only eval: fixed-vs-derived template ceiling (results go to Josh by message)
+scripts/eval_shape_naming.py
+results/shape_naming/

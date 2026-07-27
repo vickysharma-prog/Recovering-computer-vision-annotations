@@ -17,12 +17,15 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import cv2
 import numpy as np
 from scipy.ndimage import label as scipy_label
 from scipy.ndimage import maximum_filter
+
+if TYPE_CHECKING:  # avoid a runtime import cycle (subtract imports classify)
+    from src.align import AlignResult
 
 from src.legend import (
     LegendEntry,
@@ -349,6 +352,25 @@ def detect_dots(
     dots) shape; clustered dots take the cluster's local colour.
     """
     centers, single_area = _dot_centers(aerial_rgb, exclude)
+    return _dots_from_centers(aerial_rgb, centers, single_area)
+
+
+def _dots_from_centers(
+    aerial_rgb: np.ndarray,
+    centers: list[tuple[float, float]],
+    single_area: float,
+) -> list[AerialDot]:
+    """
+    Read colour, shape and template for each dot center.
+
+    Shared by both detectors: the colour path (`detect_dots`) finds centers by
+    HSV thresholding, the subtraction path (`detect_dots_subtract`) finds them by
+    image difference. Once a center is known, the per-dot feature extraction is
+    identical, so `assign_classes` sees the same AerialDot shape regardless of
+    how the dot was located. `single_area` sizes the crop window around each
+    center — the colour path passes its median-compact estimate, the subtraction
+    path its distance-transform modal marker area.
+    """
     if not centers:
         return []
     half = max(4, int(round(np.sqrt(single_area) * 0.9)))
@@ -376,6 +398,51 @@ def detect_dots(
             color_vec=_color_vec_from_glyph(glyph, hsv_up),
         ))
     return dots
+
+
+def detect_dots_subtract(
+    screenshot_rgb: np.ndarray,
+    original_rgb: np.ndarray,
+    alignment: AlignResult,
+    exclude: Optional[tuple[int, int, int, int]] = None,
+) -> list[AerialDot]:
+    """
+    Detect dots by image difference (the primary path), then read each one's
+    colour/shape exactly as the colour detector does.
+
+    Subtraction against the aligned clean original locates annotation ink far
+    more precisely than colour thresholds (8.40x -> 1.24x median over-detection),
+    but says nothing about class. So it only supplies the centers here; the
+    shared `_dots_from_centers` reads colour + template at each, and
+    `assign_classes` maps them to legend classes as before. Falls back to the
+    colour path when alignment was refused, which is the behaviour to ship.
+
+    Colour is deliberately NOT used to filter the ink at this stage — that stays
+    a separate, measured step, so this function's count matches standalone
+    `dot_candidates` (parity) rather than quietly folding in a colour reject.
+    """
+    if not alignment.ok:
+        return detect_dots(screenshot_rgb, exclude)
+
+    # Lazy import: subtract imports classify (_split_cluster), so a top-level
+    # import here would close the cycle.
+    from src.subtract import extract_annotations, dot_candidates
+
+    sub = extract_annotations(screenshot_rgb, original_rgb, alignment)
+    cands = dot_candidates(sub)
+    centers = [(cx, cy) for (cx, cy, _w, _h, _a) in cands]
+    if exclude is not None:
+        ex, ey, ew, eh = exclude
+        centers = [(cx, cy) for (cx, cy) in centers
+                   if not (ex <= cx <= ex + ew and ey <= cy <= ey + eh)]
+    if not centers:
+        return []
+    # Single-marker crop size from the subtraction blobs themselves. dot_candidates
+    # has already split merged clusters, so each candidate is ~one marker and the
+    # median area is a clean per-dot estimate.
+    areas = [a for (_cx, _cy, _w, _h, a) in cands if a > 0]
+    single_area = max(float(np.median(areas)), 12.0) if areas else 12.0
+    return _dots_from_centers(screenshot_rgb, centers, single_area)
 
 
 def _dot_quality(glyph: np.ndarray, hsv_up: np.ndarray) -> float:

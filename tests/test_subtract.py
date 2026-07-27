@@ -141,6 +141,34 @@ class TestDotCandidates:
         sub = _aligned(*_pair(dots=(), seed=41))
         assert dot_candidates(sub) == [] or len(dot_candidates(sub)) < 5
 
+    def test_subtract_path_count_matches_candidates(self):
+        """Wiring parity: detect_dots_subtract emits one dot per candidate.
+
+        The subtraction path must locate exactly what dot_candidates finds — it
+        only wraps each center with colour/shape for classification, so folding a
+        colour reject in here (which would change the count) is deliberately not
+        done. Interior grid dots have no edge-crop drops, so the counts are equal.
+        """
+        from src.classify import detect_dots_subtract
+        dots = _grid(4, 3)
+        shot, original = _pair(dots=dots, seed=51)
+        res = align(shot, original)
+        assert res.ok
+        n_cands = len(dot_candidates(extract_annotations(shot, original, res)))
+        n_wired = len(detect_dots_subtract(shot, original, res))
+        assert n_wired == n_cands and n_wired > 0
+
+    def test_subtract_path_falls_back_when_alignment_refused(self):
+        """A refused alignment must degrade to the colour detector, not raise."""
+        from src.classify import detect_dots_subtract
+        rng = np.random.default_rng(5)
+        noise = rng.integers(0, 255, (600, 800, 3), dtype=np.uint8)
+        original = _textured_original(seed=53)
+        bad = align(original, noise)
+        assert not bad.ok
+        out = detect_dots_subtract(original, noise, bad)   # falls back, no raise
+        assert isinstance(out, list)
+
     def test_desaturated_ink_is_rejected(self):
         """The chroma gate drops low-saturation ink but keeps a saturated marker.
 
