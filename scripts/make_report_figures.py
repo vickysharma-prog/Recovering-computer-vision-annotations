@@ -7,7 +7,7 @@ Produces small JPEGs so the HTML stays light:
   3. ground-truth artifact — a 'no photo coverage' frame
 """
 from __future__ import annotations
-import os, sys
+import os, shutil, subprocess, sys
 import cv2, numpy as np, pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -92,14 +92,14 @@ ax.set_title(f"Ground-truth audit — 'No photo coverage for this area'\n"
              fontsize=11.5)
 save(fig, "fig_artifact.png")
 
-# ── 4. recompress the classification template-match figure (Josh's ask) ─
-src_fig = "results/figures/fig14_template_match_samples_D.png"
-if os.path.exists(src_fig):
-    img = cv2.imread(src_fig)
-    h, w = img.shape[:2]; scale = min(1.0, 1100 / w)
-    img = cv2.resize(img, (int(w*scale), int(h*scale)))
-    cv2.imwrite(os.path.join(OUT, "fig_classify_D.jpg"), img,
-                [cv2.IMWRITE_JPEG_QUALITY, 75])
-    print(f"  wrote fig_classify_D.jpg ({os.path.getsize(os.path.join(OUT,'fig_classify_D.jpg'))//1024} KB)")
+# ── 4. classification figure ─────────────────────────────────────────
+# Generated from the live matching path by make_classify_figure.py, so it
+# always shows current behaviour. It is a separate script because it needs the
+# legend parse and the class assignment, not just detection.
+import subprocess
+subprocess.run([sys.executable, "scripts/make_classify_figure.py",
+                "--key", "D_raccoon_2011", "--rows", "8"], check=True)
+shutil.copyfile(os.path.join(OUT, "fig_classify_D_raccoon_2011.jpg"),
+                os.path.join(OUT, "fig_classify_D.jpg"))
 
 print("done")

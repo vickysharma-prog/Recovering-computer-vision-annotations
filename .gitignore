@@ -237,3 +237,6 @@ docs/TASKS.md
 # Local-only eval: fixed-vs-derived template ceiling (results go to Josh by message)
 scripts/eval_shape_naming.py
 results/shape_naming/
+
+# Extra classification figures from picking a demo frame (only fig_classify.jpg ships)
+results/report_fig/fig_classify_*.jpg
