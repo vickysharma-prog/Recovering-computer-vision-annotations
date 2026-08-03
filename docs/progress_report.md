@@ -3,15 +3,15 @@
 **Organization:** WeeCology / DeepForest (University of Florida)
 **Contributor:** Vicky Sharma
 **Mentor:** Josh Veitch-Michaelis
-**Repo:** github.com/vickysharma-prog/Deepforest-bird-recovery-prototype
+**Repo:** github.com/vickysharma-prog/Recovering-computer-vision-annotations
 **Last updated:** 2026-08-04 (detection wired into classification; classification A/B on 41 frames; README + learnings rewritten for current state)
 
 > **READ THIS FIRST: two earlier claims in this document have been retracted.**
 > They are left in place with correction notes rather than deleted, because the
 > reasoning that produced them is instructive.
 > 1. **`total_birds` is NOT the dot-count ground truth** (corrected 2026-07-20).
->    Every detection accuracy figure dated before 2026-07-20: including the
->    headline "70.8%" and the four study images' "true" counts: was measured
+>    Every detection accuracy figure dated before 2026-07-20 (including the
+>    headline "70.8%" and the four study images' "true" counts) was measured
 >    against the wrong quantity. See *Ground Truth Correction*.
 > 2. **The count-prior (w=0.9) result was retracted** (2026-07-01). It games the
 >    metric it is scored on rather than improving classification. See the
@@ -31,7 +31,7 @@
 
 The 2010 Deepwater Horizon oil spill triggered the largest avian monitoring effort in Gulf Coast history. Scientists captured **18,304 aerial survey photographs** and annotated **340,000+ bird observations** using a point-counting tool that baked colored dots directly into screenshot pixels. No coordinate data was saved. The annotations exist visually but are inaccessible to any machine learning pipeline. This project recovers them.
 
-**Dataset:** twi-aviandata.s3.amazonaws.com, 18,304 screenshots, 49,204 CSV rows, 102 species, 18 annotators, 442 colonies, 7 years (2010–2021), 5 Gulf Coast states.
+**Dataset:** twi-aviandata.s3.amazonaws.com: 18,304 screenshots, 49,204 CSV rows, 102 species, 18 annotators, 442 colonies, 7 years (2010–2021), 5 Gulf Coast states.
 
 ---
 
@@ -43,7 +43,7 @@ Before writing any pipeline code, two weeks were spent on data archaeology:
 - Physically measured 25 diverse images
 - Tested SAM 3, DeepForest, and GroundingDINO on raw screenshots
 
-Every pipeline parameter was **measured, not guessed.** Detection accuracy improved from 44% (guessed parameters) to **70.8%** (measured parameters) without changing the fundamental approach.
+Every pipeline parameter was **measured, not guessed.** Detection accuracy improved from 44% (guessed parameters) to 70.8% (measured parameters) without changing the fundamental approach. **Both of those figures are retracted**: they were scored against `total_birds`, and the pipeline was fed CSV counts as an input. The current benchmark replaces them (see *Ground Truth Correction*).
 
 ---
 
@@ -58,18 +58,17 @@ Screenshot → Decompose → Detect → Validate → Map Coords → Export → T
 | Decompose | `src/decompose.py` | Done, CI passing. **Superseded** for the legend path by `legend.locate_dialog` (the 50%-width split discarded half the aerial) |
 | Detect (colour) | `src/detect.py` | **Legacy**: needs CSV counts; not wired into anything live (only its own tests). The self-contained colour baseline/fallback is `classify.detect_dots` |
 | Legend (per-image marker→class) | `src/legend.py` | Done, CI passing (PR #3). `locate_dialog` succeeds on ~90% of a 21-image sample, but "returned a box" ≠ correct, false positives seen |
-| Classify (aerial dots vs legend) | `src/classify.py` | Done. Lab colour anchoring + NCC. Within-colour separability D 55→76%, A 56→83% |
-| **Align (screenshot ↔ clean original)** | **`src/align.py`** | **NEW 2026-07-20, 96.7% success (58/60), 0.38px median error** |
-| **Subtract (difference-based detection)** | **`src/subtract.py`** | **NEW 2026-07-20, detection error 8.40x → 1.46x median. Dense solved (1.01x); sparse still 6.07x** |
+| Classify (aerial dots vs legend) | `src/classify.py` | Done, but the weak half. Lab colour anchoring + NCC. Self-recovery D 55→76%, A 56→83%; on real aerial dots agreement is **0.36** |
+| **Align (screenshot ↔ clean original)** | **`src/align.py`** | Done. 96.7% success (58/60), 0.38px median error |
+| **Subtract (difference-based detection)** | **`src/subtract.py`** | Done. Detection error 8.40x → **1.24x** median (sparse 2.13x, medium 1.24x, dense 1.14x) |
 | Validate | `src/validate.py` | Not started as a module (notebook only) |
 | Map coords | `src/map_coords.py` | Not started as a module (notebook only) |
 | Export | `src/export.py` | Not started as a module (notebook only) |
 | Pipeline | `src/pipeline.py` | Not started as a module |
-| Full run (18,304 images) |, | Blocked on detection clearing its gate |
+| Full run (18,304 images) | not started | Detection gate now met; next after the downstream stages exist |
 
-**Test count: 163 passing** (143 prior + 20 new for align/subtract).
-**Branch `feat/legend-pipeline` is UNCOMMITTED**: deliberately held until detection
-is satisfactory.
+**Test count: 166 passing.** All of the above is committed on PR #7 (branch
+`feat/detection-pipeline`), CI green.
 
 ### Stage 1: Decompose (`src/decompose.py`)
 3-method consensus separates aerial photograph from species dialog:
@@ -113,18 +112,23 @@ DeepForest-compatible CSV: `xmin, ymin, xmax, ymax, label, score`. Train/test sp
 > **⚠️ The table below is measured against `total_birds` and is unreliable.**
 > See *Ground Truth Correction*. Current, correctly-grounded numbers:
 >
-> | Metric (63 stratified pairs, vs `category_sum`) | Value |
+> | Metric (63 stratified pairs, 60 scored, vs `category_sum`) | Value |
 > |---|---|
 > | Alignment success | **96.7%** (58/60) |
 > | Alignment reprojection error | median **0.38px** |
 > | Detection ratio: OLD colour | 8.40x over |
-> | Detection ratio: NEW subtraction | **1.46x** over |
-> | …dense band | **1.01x** |
-> | …medium band | 1.42x |
-> | …sparse band | 6.07x (open) |
-> | Symmetric error, median \|log2 ratio\| | 3.07 → **0.73** |
-> | Within-colour classification (self-recovery) | D **76%**, A **83%** |
-> | Tests | **163 passing** |
+> | Detection ratio: NEW subtraction | **1.24x** over |
+> | …dense band | **1.14x** |
+> | …medium band | **1.24x** |
+> | …sparse band | **2.13x** (still the weakest) |
+> | Symmetric error, median \|log2 ratio\| | 3.07 → **0.53** |
+> | Classification, self-recovery | D **76%**, A **83%** |
+> | Classification, real aerial dots (41 frames) | 0.26 → **0.36** |
+> | Tests | **166 passing** |
+>
+> Read the two classification rows together. Self-recovery tests a glyph against
+> templates cut from its own pixels, so it flatters the method; the 0.36 is what
+> the matcher scores on real aerial dots.
 
 | Metric | Value |
 |--------|-------|
@@ -172,7 +176,7 @@ DeepForest-compatible CSV: `xmin, ymin, xmax, ymax, label, score`. Train/test sp
 
 ### Round 2: Category assignment problem (resolved in discussion)
 
-**Josh's concern:** "Within each color group, dots will be proportionally assigned to categories based on CSV ratios", this reads like a random assignment, which would be incorrect.
+**Josh's concern:** "Within each color group, dots will be proportionally assigned to categories based on CSV ratios". This reads like a random assignment, which would be incorrect.
 
 **Root cause of the problem:** Current code assigns dots of a given color to one species; sub-categories (WBN, Site, Nest, etc.) were being split proportionally within a color group, effectively random because no spatial or shape signal distinguishes them.
 
@@ -292,7 +296,7 @@ are unchanged (no regression on A/C/D).
 img_02 (224 px) and img_03 (151 px); those images had already-wrong totals (8, 15
 respectively) and the clip changes them to other wrong values, an honest
 representation of unreadable digits rather than false-confidence counts. img_08
-(Dry Bread, Σcount=0 in `scale_validation.md`) has 73 px strips, the clip does
+(Dry Bread, Σcount=0 in `scale_validation.md`) has 73 px strips, so the clip does
 not fire; img_08's zero-count problem is a digit-recognition failure, not a strip
 position error.
 
@@ -459,7 +463,7 @@ in that session. The 145 px fix is confirmed correct for `img_02` (224 px) and
 If B truly has 444 nest-site markers (grey squares baked into the aerial), they
 have low saturation (grey ≈ 0 in HSV S channel) and would not pass the `sat > 80`
 threshold in `_dot_centers`. The 62 "grey" detected dots are background texture
-that barely passed the threshold, they are NOT the actual grey square markers.
+that barely passed the threshold. They are NOT the actual grey square markers.
 Grey marker detection would require a separate low-saturation detection pass.
 
 #### What the quality-threshold test showed
@@ -536,7 +540,7 @@ is why the anchoring space has to include value, not hue alone.
 | 3. Try shape options empirically (**NCC** / match the actual patch, not a binary mask) | `cv2.matchTemplate` TM_CCOEFF_NORMED on intensity templates, ablated against binary-mask cosine | **NCC won**; final D 55→**76%**, A 56→**83%** |
 
 **Ablation also removed something:** the `+0.35` shape-name boost *hurt* and was
-deleted. It was not assumed either way, it was measured.
+deleted. It was not assumed either way. It was measured.
 
 **Metric used (deliberately):** legend **self-recovery**: degrade each legend
 glyph to aerial scale, run it back through the matcher, check it recovers its own
@@ -584,9 +588,9 @@ exclude filter after splitting.
 3. Alignment also yields a free mask for title bars and scroll bars.
 
 Point 2 reframed the hardest stage and became the current work. Important limit,
-stated up front: **subtraction answers *where* annotations are, not *which class***
-, the legend marker→class matching is still required. It feeds that work, it does
-not replace it.
+stated up front: **subtraction answers *where* annotations are, not *which class***.
+The legend marker→class matching is still required. Subtraction feeds that work; it
+does not replace it.
 
 ---
 
@@ -620,7 +624,7 @@ per dot-category, via columns `screenshot_new` / `HighResImage_new`.
 **Every detection accuracy number in this document dated before 2026-07-20 was
 measured against the wrong quantity.**
 
-The question "how many dots are on this image?" had never been verified, it was
+The question "how many dots are on this image?" had never been verified; it was
 assumed. It was settled by reading the counting tool's **own "Total Count" field**,
 which is baked into every dialog, off four screenshots **by eye** (count-OCR is
 only ~60–65% reliable, so it could not be trusted for this), and comparing:
@@ -746,7 +750,7 @@ blob *is* a run, so no split ever triggers and the frame reports one dot.
 | Legend-palette colour reject to remove red text/lines | Only 105 → 79 blobs, and **the legend failed to parse on the test image** | Couples detection to legend parsing, which itself fails on ~12% |
 | Bounding-box fill to identify chrome | Fixed dense, broke sparse (0.98x → 9.85x) | Fill does not separate dialog from marker carpet; saturation does |
 
-**Still unresolved:** sparse/coastal frames over-detect **6.07x**. Remaining false
+**Unresolved at the time of writing (later cut to 2.13x by the saturation floor):** sparse/coastal frames over-detect **6.07x**. Remaining false
 ink there is genuine *annotation* that is not a dot, red site-label text and
 transect lines, plus residual water. The principled filter is the image's own
 legend palette (text/lines are off-palette), but that is coupled to legend parsing
@@ -768,7 +772,7 @@ and is Phase-3 work.
 The one band still failing the detection gate was **sparse**. Diagnosed it
 spatially first (`scripts/diagnose_sparse.py`, overlays in `results/sparse_probe/`)
 rather than tuning blind. The false ink on sparse frames is **not** primarily red
-text/lines as previously assumed, it is **low-saturation residual** (water glint,
+text/lines as previously assumed. It is **low-saturation residual** (water glint,
 mudflat texture, and the grey panel behind a label). On a near-empty frame this
 noise **outnumbers** the real markers and *poisons the size estimate*: the
 distance-transform modal radius collapses to its floor → the size band widens →
@@ -924,12 +928,12 @@ scratch measurements rather than a record worth publishing.
   tool's own Total Count; `total_birds` retired as ground truth
 - ~~Rebuild the benchmark from identifiable images~~ → 63 stratified pairs
 - ~~Alignment~~ → `src/align.py`, **96.7%**, 0.38px, refuses rather than mis-warps
-- ~~Difference-based detection~~ → `src/subtract.py`, **8.40x → 1.46x** median error
+- ~~Difference-based detection~~ → `src/subtract.py`, **8.40x → 1.24x** median error
 
 ### Immediate (next): close the detection gate, then commit
 
-**The branch is uncommitted on purpose.** The agreed bar is that detection must be
-satisfactory first. Overall is now **1.24x** median; the last soft spot is
+**Status (2026-08-04): this gate was met and the work is committed on PR #7.**
+The agreed bar was that detection must be satisfactory before committing. Overall is now **1.24x** median; the last soft spot is
 **sparse (2.13x)**, addressed in part by the 2026-07-24 saturation floor.
 
 1. **Sparse over-detection (2.13x, down from 2.96x).** The dominant low-saturation
@@ -989,10 +993,14 @@ because the dialog-cropping root cause it uncovered was real and is fixed.
 
 ## Open Questions / Blockers
 
-### Current (2026-07-20)
+### As of 2026-07-20 (partly resolved since)
 
-- **Sparse frames over-detect 6.07x**: the one thing blocking the detection gate
-  and therefore the commit. Cause is understood (label text, transect lines,
+> Updated 2026-08-04: the saturation floor cut sparse over-detection from 6.07x
+> to **2.13x** and the detection gate was met. What remains of this entry is the
+> residual marker-red label text, which is a standing limit on a few frames.
+
+- **Sparse frames over-detect 6.07x**: at the time, the one thing blocking the
+  detection gate and therefore the commit. Cause is understood (label text, transect lines,
   residual water are all genuine *ink* but not dots); the principled filter is the
   legend palette, which is coupled to legend parsing.
 - **Legend parsing is less reliable than reported.** `locate_dialog` returned a box
@@ -1056,7 +1064,7 @@ because the dialog-cropping root cause it uncovered was real and is fixed.
 | `legend.py` | Find the dialog, parse legend rows → (marker, colour, shape, template, class name, count) | Working; localisation ~90% but with false positives |
 | `classify.py` | Assign aerial dots to legend classes: Lab colour anchoring → NCC shape within colour | Working; within-colour D 76% / A 83% |
 | `align.py` | **NEW**: register screenshot ↔ clean original (SIFT+RANSAC, quality gate) | 96.7%, 0.38px |
-| `subtract.py` | **NEW**: annotation ink as image difference; `dot_candidates` turns ink into dots | 1.46x median error; sparse weak |
+| `subtract.py` | annotation ink as image difference; `dot_candidates` turns ink into dots | 1.24x median error; sparse (2.13x) weakest |
 | `decompose.py` | Original screenshot splitter (Stage 1) | **Legacy**: superseded by `legend.locate_dialog`; only its own tests + legacy `run_legend.py` use it |
 | `detect.py` | Original colour detector (Stage 2), needs CSV counts | **Legacy**: not wired into anything live; only its own tests. The colour baseline/fallback in use is `classify.detect_dots`, not this |
 
@@ -1094,7 +1102,7 @@ python scripts/eval_detection.py        # old vs new, vs category_sum
 python scripts/eval_alignment.py        # registration success rate
 
 # 3. Tests
-pytest tests/ -q                        # 163 passing
+pytest tests/ -q                        # 166 passing
 ```
 
 **Ground rules that must not be broken** (each was learned the hard way):
@@ -1105,7 +1113,7 @@ pytest tests/ -q                        # 163 passing
 3. Ground truth for dot counts is **`category_sum`**, never `total_birds`.
 4. Verify **spatially**, not just by count. A matching count can be right for the
    wrong reasons.
-5. Do not tune on the four old study images, that is how the colour thresholds
+5. Do not tune on the four old study images. That is how the colour thresholds
    overfitted. Use the 63-pair stratified benchmark.
 
 ---
@@ -1124,7 +1132,7 @@ pytest tests/ -q                        # 163 passing
   - fig1–fig5: dialog localization, marker-class mapping, aerial classified, count barchart, synthetic color-vs-shape demo
   - **fig6_count_prior_improvement.png**: before/after attributable recall grouped bar (4 images, A +35 pp, C +49 pp)
   - **fig7_class_breakdown_4images.png**: per-class attributable counts 2×2 grid, all 4 images
-- `docs/learnings.md`: 21 documented findings from building the prototype
+- `docs/learnings.md`: 30 documented findings from building the prototype
 - `docs/training_analysis.md`: 4 training experiments with root cause analysis
 - *(local)* `docs/project_documentation.pdf`: summary sent to mentor (this report's source)
 - `notebook/prototype_v1.ipynb`: full 23-section prototype (runs in Colab, T4 GPU, ~45 min)
