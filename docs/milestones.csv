@@ -1,0 +1,8 @@
+date,label,short_label,note,det_median,det_sparse,det_medium,det_dense,det_symlog,align,tests,cls_mean,cls_prev,selfrec_d,selfrec_a
+2026-06-30,legend module (PR #3),,"per-image marker to class parsing; dialog found as a box, 14/14",,,,,,,143,,,,
+2026-07-01,count-OCR + count-prior,,count-prior w=0.9 later retracted: it gamed the metric it was scored on,,,,,,,146,,,,
+2026-07-10,matching rework,,"Lab colour anchoring, background removal, NCC; shape-name boost removed by ablation",,,,,,,146,,,0.76,0.83
+2026-07-20,ground truth corrected,20 Jul|colour|thresholds,"dot count is category_sum, not total_birds; benchmark rebuilt as 63 stratified pairs",8.403,63.51,9.148,3.56,3.071,,163,,,,
+2026-07-20,difference-based detection,20 Jul|subtract the|original,align.py + subtract.py; annotations as image difference instead of colour thresholds,1.46,6.07,1.42,1.01,0.73,0.967,163,,,,
+2026-07-24,saturation floor,24 Jul|saturation|floor,gate low-saturation ink before the marker-size estimate; every band improved,1.244,2.132,1.245,1.138,0.527,0.967,164,,,,
+2026-08-03,wired + measured on 41 frames,3 Aug|wired into|classifier,subtraction feeds the classifier; classification A/B over 41 frames,1.244,2.132,1.245,1.138,0.527,0.967,166,0.357,0.263,,

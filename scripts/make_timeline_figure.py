@@ -29,6 +29,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 ROOT = Path(__file__).parent.parent
 OUT = ROOT / "results" / "report_fig"
@@ -42,18 +43,33 @@ INK = "#0b0b0b"
 INK_2 = "#52514e"
 GRID = "#d8d7d2"
 
-# Milestones that carry a detection measurement. The three earlier ones
-# (legend module, count-OCR, matching rework) predate the benchmark, so there
-# is no comparable detection number to plot for them.
-STEPS = [
-    ("20 Jul\ncolour\nthresholds", 8.403, 63.51),
-    ("20 Jul\nsubtract the\noriginal", 1.46, 6.07),
-    ("24 Jul\nsaturation\nfloor", 1.244, 2.132),
-    ("3 Aug\nwired into\nclassifier", 1.244, 2.132),
-]
+# History comes from docs/milestones.csv, the same file scripts/log_to_comet.py
+# reads, so the figure and the dashboard cannot drift apart. Rows without a
+# detection measurement predate the benchmark and are skipped on the left
+# panel; there is no comparable number to plot for them.
+MILESTONES_CSV = ROOT / "docs" / "milestones.csv"
 
-CLS = [("previous\nmatching", 0.263), ("current\nmatching", 0.357)]
-SELF_RECOVERY = 0.795          # midpoint of D 76% and A 83%
+
+def load() -> tuple[list, list, float]:
+    """Read the shared milestone file into what the two panels need."""
+    df = pd.read_csv(MILESTONES_CSV)
+
+    # "|" separates the lines of an axis label, so the CSV stays one row per
+    # milestone and does not need embedded newlines.
+    det = df[df.det_median.notna()]
+    steps = [(str(r.short_label).replace("|", "\n"),
+              float(r.det_median), float(r.det_sparse))
+             for r in det.itertuples()]
+
+    last = df[df.cls_mean.notna()].iloc[-1]
+    cls = [("previous\nmatching", float(last.cls_prev)),
+           ("current\nmatching", float(last.cls_mean))]
+
+    rec = df[df.selfrec_d.notna()].iloc[-1]
+    self_rec = (float(rec.selfrec_d) + float(rec.selfrec_a)) / 2
+    return steps, cls, self_rec
+
+
 
 
 def _style(ax):
@@ -67,6 +83,7 @@ def _style(ax):
 
 
 def build() -> None:
+    STEPS, CLS, SELF_RECOVERY = load()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.2, 5.4),
                                    gridspec_kw={"width_ratios": [1.75, 1]},
                                    facecolor=SURFACE)

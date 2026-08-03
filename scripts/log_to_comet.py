@@ -63,44 +63,25 @@ FIGURES = [
 
 BAND_ORDER = {"sparse": 0, "medium": 1, "dense": 2, "?": 3}
 
-# The project's measured history, transcribed from the dated entries in
-# docs/progress_report.md. Only numbers that were actually recorded on that
-# date appear here; a metric that was not measured at a milestone is left out
-# rather than carried forward or guessed.
-#
-# Logged as one experiment with the milestone index as the step, so the charts
-# show the progression instead of only the latest value.
-MILESTONES = [
-    dict(date="2026-06-30", label="legend module (PR #3)",
-         note="per-image marker to class parsing; dialog found as a box, 14/14",
-         tests=143),
-    dict(date="2026-07-01", label="count-OCR + count-prior",
-         note="count-prior w=0.9 later retracted: it gamed the metric it was scored on",
-         tests=146),
-    dict(date="2026-07-10", label="matching rework",
-         note="Lab colour anchoring, background removal, NCC; shape-name boost removed by ablation",
-         tests=146, selfrec_d=0.76, selfrec_a=0.83),
-    dict(date="2026-07-20", label="ground truth corrected",
-         note="dot count is category_sum, not total_birds; benchmark rebuilt as 63 stratified pairs",
-         tests=163,
-         det_median=8.403, det_sparse=63.51, det_medium=9.148, det_dense=3.56,
-         det_symlog=3.071),
-    dict(date="2026-07-20", label="difference-based detection",
-         note="align.py + subtract.py; annotations as image difference instead of colour thresholds",
-         tests=163, align=0.967,
-         det_median=1.46, det_sparse=6.07, det_medium=1.42, det_dense=1.01,
-         det_symlog=0.73),
-    dict(date="2026-07-24", label="saturation floor",
-         note="gate low-saturation ink before the marker-size estimate; every band improved",
-         tests=164, align=0.967,
-         det_median=1.244, det_sparse=2.132, det_medium=1.245, det_dense=1.138,
-         det_symlog=0.527),
-    dict(date="2026-08-03", label="wired + measured on 41 frames",
-         note="subtraction feeds the classifier; classification A/B over 41 frames",
-         tests=166, align=0.967,
-         det_median=1.244, det_sparse=2.132, det_medium=1.245, det_dense=1.138,
-         det_symlog=0.527, cls_mean=0.357, cls_prev=0.263),
-]
+# The project's measured history lives in docs/milestones.csv, one row per
+# dated milestone, so this script and make_timeline_figure.py cannot drift
+# apart. Numbers there are transcribed from the dated entries in
+# docs/progress_report.md. A metric not measured at a milestone is left blank
+# rather than carried forward.
+MILESTONES_CSV = ROOT / "docs" / "milestones.csv"
+
+
+def load_milestones() -> list[dict]:
+    if not MILESTONES_CSV.exists():
+        return []
+    df = pd.read_csv(MILESTONES_CSV)
+    rows = []
+    for r in df.to_dict("records"):
+        row = {k: v for k, v in r.items()
+               if v is not None and not (isinstance(v, float) and np.isnan(v))}
+        rows.append(row)
+    return rows
+
 
 # Approaches that were tested and dropped, with the number that killed each.
 # From docs/learnings.md and the progress report.
@@ -253,7 +234,8 @@ def log_timeline(Experiment, project: str, workspace: str | None,
     exp.add_tags(["timeline", "history", "opencv"])
     exp.log_parameters(params)
 
-    for step, m in enumerate(MILESTONES):
+    milestones = load_milestones()
+    for step, m in enumerate(milestones):
         for key, metric in MILESTONE_METRICS.items():
             if key in m:
                 exp.log_metric(metric, float(m[key]), step=step)
@@ -264,7 +246,7 @@ def log_timeline(Experiment, project: str, workspace: str | None,
          "detection_ratio_median": m.get("det_median"),
          "detection_ratio_sparse": m.get("det_sparse"),
          "tests": m.get("tests"), "what_changed": m["note"]}
-        for i, m in enumerate(MILESTONES)]))
+        for i, m in enumerate(milestones)]))
     exp.log_table("abandoned_approaches.csv", pd.DataFrame(
         ABANDONED, columns=["approach", "why it was dropped"]))
     for name, path in FIGURES:
@@ -275,7 +257,7 @@ def log_timeline(Experiment, project: str, workspace: str | None,
         if p.exists():
             exp.log_asset(str(p), file_name=Path(doc).name)
     exp.end()
-    print(f"  logged project timeline ({len(MILESTONES)} milestones)")
+    print(f"  logged project timeline ({len(milestones)} milestones)")
 
 
 def main() -> int:
