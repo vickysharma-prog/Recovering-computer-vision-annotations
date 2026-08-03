@@ -358,7 +358,12 @@ def main() -> int:
                 for i, v in enumerate(values):
                     if v is not None and not (isinstance(v, float) and np.isnan(v)):
                         exp.log_metric(metric, float(v), step=i)
-        exp.log_metrics(r["summary"])
+        # Summary numbers go to "other", not "metric". Comet builds one chart
+        # panel per metric name, and a single-valued metric becomes a lone bar
+        # with nothing to compare against. As "other" they still appear in the
+        # comparison table, and the only chart is the band series above.
+        for k, v in r["summary"].items():
+            exp.log_other(k, round(float(v), 4))
         exp.log_other("frame_order", "sparse, then medium, then dense")
 
         for path in r["assets"]:
