@@ -167,7 +167,13 @@ def build_runs() -> list[dict]:
             runs.append({
                 "name": f"detection: {label}",
                 "tags": ["detection", tag],
-                "series": [("detection_ratio", d[col].tolist())],
+                # Step is the density band, so selecting the two detection
+                # runs together draws two lines on one axis. That comparison is
+                # the whole point, and a single scalar cannot show it.
+                "band_series": [("detection_ratio",
+                                 [float(d[d.band == b][col].median())
+                                  for b in ("sparse", "medium", "dense")])],
+                "series": [("detection_ratio_per_frame", d[col].tolist())],
                 "labels": d.name.tolist(),
                 "summary": summary,
                 "assets": [det_path, RESULTS / "eval_alignment.csv"],
@@ -200,7 +206,11 @@ def build_runs() -> list[dict]:
             runs.append({
                 "name": f"classification: {label}",
                 "tags": ["classification", tag],
-                "series": [("classification_agreement", df.agree.tolist())],
+                "band_series": [("classification_agreement",
+                                 [float(df[df.band == b].agree.mean())
+                                  for b in ("sparse", "medium", "dense")])],
+                "series": [("classification_agreement_per_frame",
+                            df.agree.tolist())],
                 "labels": df.name.tolist(),
                 "summary": summary,
                 "assets": [old_f, new_f],
@@ -336,6 +346,13 @@ def main() -> int:
 
         # Step is the frame index, ordered sparse then medium then dense, so
         # the chart reads left to right as the images get more crowded.
+        # Three points, one per density band, on a shared axis.
+        for metric, values in r["band_series"]:
+            for i, v in enumerate(values):
+                if not (isinstance(v, float) and np.isnan(v)):
+                    exp.log_metric(metric, float(v), step=i)
+        exp.log_other("step_axis", "0 = sparse, 1 = medium, 2 = dense")
+
         if per_frame:
             for metric, values in r["series"]:
                 for i, v in enumerate(values):

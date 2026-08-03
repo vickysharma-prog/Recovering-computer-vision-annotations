@@ -906,6 +906,49 @@ un-ignored, along with this report. The remaining working notes (`TASKS.md`,
 HTML report, and all `.docx`/`.pdf` drafts) stay gitignored, since they are drafts and
 scratch measurements rather than a record worth publishing.
 
+## Experiment tracking (2026-08-04)
+
+Henry suggested putting the project on Comet ML so progress is readable from a
+dashboard. It is up and public:
+**comet.com/vicky-sharma-1971/bird-annotation-recovery**
+
+**What Comet can and cannot do here.** Its panels draw a line when a metric has
+many points along a step axis, which in practice means training epochs. This
+project has no training loop yet, so seven dated milestones render as seven
+dots and the auto-generated charts say very little. Three attempts at
+restructuring the logging confirmed that no logging shape fixes it. The
+progress chart is therefore drawn by `scripts/make_timeline_figure.py` and
+logged to Comet as an image, and Comet hosts figures, tables and run history
+rather than generating the view. When DeepForest fine-tuning starts, its
+Lightning `CometLogger` plugs in and the auto panels start working properly.
+
+**What is in the project**
+
+| Experiment | Contents |
+|---|---|
+| `project timeline` | progress figure, milestone table, the nine dropped approaches, 8 figures, README and this report as assets |
+| `detection: colour thresholds` / `detection: subtraction` | `detection_ratio` at step 0/1/2 = sparse/medium/dense, so selecting both draws two comparable lines |
+| `classification: previous` / `classification: current` | `classification_agreement` on the same band axis |
+
+**Keeping it current.** `docs/milestones.csv` is the single source for the
+history; both the figure and the logger read it, so they cannot drift apart.
+After a change that moves a number:
+
+```bash
+python scripts/eval_detection.py            # refresh the eval CSVs
+# add one row to docs/milestones.csv
+python scripts/make_timeline_figure.py      # redraw the progress chart
+python scripts/log_to_comet.py --clean      # republish
+```
+
+The method runs read the eval CSVs directly, so they need no manual edit. A
+blank cell in `milestones.csv` means the metric was not measured at that
+milestone; it is never carried forward from an earlier row.
+
+**Honest caveat to repeat when showing it:** the milestone history is
+transcribed from the dated entries in this report, because tracking was set up
+after that work happened. Everything from here is logged as it runs.
+
 ## Next Steps
 
 ### Done (2026-06-29) ✅
