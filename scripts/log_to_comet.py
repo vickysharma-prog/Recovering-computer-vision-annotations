@@ -5,20 +5,24 @@ This project has no training loop. Detection and classification are OpenCV, and
 the numbers come from evaluation runs rather than epochs, so the usual
 DeepForest pattern of handing a CometLogger to trainer.fit does not apply here.
 
-Comet compares runs against each other, so each method gets its own experiment
-and they share metric names. That is what makes the dashboard readable: the old
-and new method appear as two lines on one chart and two rows in the comparison
-table, instead of one run holding a pile of unrelated scalars.
-
 Experiments written:
-    detection: colour thresholds   detection_ratio over 60 frames
-    detection: subtraction         detection_ratio over 60 frames
-    classification: previous       classification_agreement over 41 frames
-    classification: current        classification_agreement over 41 frames
+    project timeline    the measured history, one step per dated milestone.
+                        Open this one first: it carries the progression
+                        charts, the figures, the milestone table, and the
+                        list of approaches that were tried and dropped.
+    detection: colour thresholds \
+    detection: subtraction        the two detection methods, summary metrics
+    classification: previous     \
+    classification: current       the two matching configurations
 
-Each also carries the summary numbers (median, per density band) and all of
-config.yaml as parameters, so a config can be tied to a result. Figures and the
-source CSVs go on the detection: subtraction run, which is the current pipeline.
+The four method runs share metric names, so selecting them together gives a
+comparison table with one row each. They are deliberately single-valued:
+logging all 60 frames as steps renders as a scatter of dots and is unreadable
+beside a run with a different number of steps. Pass --per-frame when the
+distribution is what you actually want to inspect.
+
+Every run carries config.yaml as parameters, so a config can be tied to a
+result.
 
 Needs COMET_API_KEY or a gitignored .comet.config. Without credentials it
 explains how to set them and exits 0, so it can never break a pipeline or CI.
@@ -26,7 +30,8 @@ explains how to set them and exits 0, so it can never break a pipeline or CI.
 Usage:
     python scripts/log_to_comet.py
     python scripts/log_to_comet.py --dry-run
-    python scripts/log_to_comet.py --clean     # archive earlier runs first
+    python scripts/log_to_comet.py --clean       # archive earlier runs first
+    python scripts/log_to_comet.py --per-frame   # add the noisy detail
 
 Output: runs at comet.com/<workspace>/<project>
 """
@@ -184,7 +189,7 @@ def build_runs() -> list[dict]:
                 "labels": d.name.tolist(),
                 "summary": summary,
                 "assets": [det_path, RESULTS / "eval_alignment.csv"],
-                "figures": tag == "new",
+                "figures": False,
             })
 
     ab = RESULTS / "classify_ab"
@@ -238,7 +243,7 @@ MILESTONE_METRICS = {
 
 
 def log_timeline(Experiment, project: str, workspace: str | None,
-                 params: dict) -> None:
+                 params: dict) -> None:  # noqa: C901
     """One experiment holding the whole measured history, step = milestone."""
     exp = Experiment(project_name=project, workspace=workspace,
                      auto_metric_logging=False, auto_param_logging=False,
@@ -261,6 +266,13 @@ def log_timeline(Experiment, project: str, workspace: str | None,
         for i, m in enumerate(MILESTONES)]))
     exp.log_table("abandoned_approaches.csv", pd.DataFrame(
         ABANDONED, columns=["approach", "why it was dropped"]))
+    for name, path in FIGURES:
+        if path.exists():
+            exp.log_image(str(path), name=name)
+    for doc in ("README.md", "docs/progress_report.md", "docs/learnings.md"):
+        p = ROOT / doc
+        if p.exists():
+            exp.log_asset(str(p), file_name=Path(doc).name)
     exp.end()
     print(f"  logged project timeline ({len(MILESTONES)} milestones)")
 
@@ -273,6 +285,9 @@ def main() -> int:
                     help="print what would be logged and exit")
     ap.add_argument("--clean", action="store_true",
                     help="archive existing runs in the project first")
+    ap.add_argument("--per-frame", action="store_true",
+                    help="also log every frame as a step; useful for digging "
+                         "into the distribution, too noisy for a shared view")
     args = ap.parse_args()
 
     runs = build_runs()
@@ -323,6 +338,7 @@ def main() -> int:
             print(f"archived {len(existing)} earlier run(s)")
 
     log_timeline(Experiment, args.project, args.workspace, params)
+    per_frame = args.per_frame
 
     for r in runs:
         # log_git_patch would upload every untracked file, which here means the
@@ -337,10 +353,11 @@ def main() -> int:
 
         # Step is the frame index, ordered sparse then medium then dense, so
         # the chart reads left to right as the images get more crowded.
-        for metric, values in r["series"]:
-            for i, v in enumerate(values):
-                if v is not None and not (isinstance(v, float) and np.isnan(v)):
-                    exp.log_metric(metric, float(v), step=i)
+        if per_frame:
+            for metric, values in r["series"]:
+                for i, v in enumerate(values):
+                    if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                        exp.log_metric(metric, float(v), step=i)
         exp.log_metrics(r["summary"])
         exp.log_other("frame_order", "sparse, then medium, then dense")
 
