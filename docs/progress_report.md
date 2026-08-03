@@ -949,6 +949,54 @@ milestone; it is never carried forward from an earlier row.
 transcribed from the dated entries in this report, because tracking was set up
 after that work happened. Everything from here is logged as it runs.
 
+### Status: parked on 2026-08-04, deliberately
+
+The data is in Comet and correct, verified through the API. The dashboard is
+not presentable, and after six attempts at restructuring it that is a property
+of the tool for this project, not a thing left to fix. **Parked here on
+purpose. Do not spend more time on it until DeepForest training exists.**
+
+**What works and is done**
+
+- Project is public: `comet.com/vicky-sharma-1971/bird-annotation-recovery`
+- 5 runs upload cleanly: the timeline, 2 detection methods, 2 matching configs
+- 8 figures and the docs upload as assets; the eval CSVs upload as data tables
+- `docs/milestones.csv` is the single source both the figure and the uploader
+  read, so they cannot drift apart
+- Credentials resolve from `.comet.config` (gitignored) or `COMET_API_KEY`; the
+  script exits 0 without them, so it can never break CI
+
+**What does not work, and why**
+
+- **Comet's auto-panels.** It draws a chart per metric name and needs many
+  points on a step axis, meaning training epochs. Seven milestones render as
+  seven dots. Six logging structures were tried: per-frame series, per-band
+  series, scalars, scalars moved to `log_other`. None of them changed it.
+- **"No data for this chart"** on the project Panels view. Auto-generated
+  panels keep referencing metric names from an earlier structure. Changing the
+  metrics again would just move the problem.
+- **A hand-built saved view crashed the Comet UI.** `api.create_view` accepts a
+  `chart_state` JSON blob whose schema is undocumented; the guessed schema was
+  wrong and the view returned "Something went wrong". Reverted in `24de559`. A
+  stale view named "Project overview" may still exist in the project and can be
+  deleted from the UI, since the API offers create and read but no delete or
+  update. **Do not retry this without a real schema example to copy.**
+
+**Consequences for how results are shown.** The progress chart is drawn by
+`scripts/make_timeline_figure.py` and lives in the README, which renders
+reliably on GitHub. Comet hosts it as an image rather than generating it. When
+showing the project to anyone, lead with the README.
+
+**Also note:** every `log_to_comet.py --clean` archives the old runs and mints
+new experiment keys, so any direct experiment link goes stale. Share the
+project URL, which is stable.
+
+**When to pick this back up.** At the DeepForest fine-tuning stage. DeepForest
+is PyTorch Lightning underneath, so `CometLogger` passed to `create_trainer`
+gives loss curves per epoch, precision and recall over time, and checkpoints
+versioned against the config, which is what the panels are actually built for.
+The setup is already in place, so those runs will land next to this history.
+
 ## Next Steps
 
 ### Done (2026-06-29) ✅
