@@ -165,8 +165,13 @@ def main() -> int:
         return 0
 
     from comet_ml import Experiment
+    # log_git_patch would upload every untracked file, which here means the
+    # local image fixtures: megabytes of data that add nothing to a run. The
+    # git metadata (commit, branch) is kept, since that is what ties a run to
+    # the code that produced it.
     exp = Experiment(project_name=args.project, workspace=args.workspace,
-                     auto_metric_logging=False, auto_param_logging=False)
+                     auto_metric_logging=False, auto_param_logging=False,
+                     log_git_patch=False)
     if args.name:
         exp.set_name(args.name)
 
