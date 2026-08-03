@@ -1,233 +1,224 @@
-> This project is developed as part of [Google Summer of Code 2026](https://summerofcode.withgoogle.com/),under the DeepForest project (WeeCology).
+> Developed for [Google Summer of Code 2026](https://summerofcode.withgoogle.com/) under the DeepForest project (WeeCology).
+
 # Recovering Bird Annotations from Historical Airborne Imagery
-Prototype for recovering ML-ready annotations from 18,304 historical bird survey screenshots where colored dots were baked directly into images by a point-counting tool. No coordinate data was saved. This prototype extracts dot positions, maps them to original high-resolution photographs, and produces DeepForest-compatible training data.
 
-Data source: twi-aviandata.s3.amazonaws.com (Gulf of Mexico avian monitoring, 2010-2021, post-Deepwater Horizon)
+Between 2010 and 2021, surveyors counted birds in Gulf of Mexico aerial photographs using a point-counting tool. The tool drew a coloured dot on the photograph for every bird and saved a screenshot. It never saved the coordinates. What remains is 18,304 screenshots with the annotations baked into the pixels, and the clean high-resolution photographs they were drawn on.
 
----
-## About This Work
-This prototype was built over 1.5 months with guidance from the open-source community and past DeepForest contributors who guided me through the open-source contribution process and research. Before writing any pipeline code, I spent two weeks studying the data — mapping 533K files in the S3 bucket, analyzing 49,204 CSV rows across 60 columns, downloading and measuring 25 diverse images, and testing existing models (SAM 3, DeepForest, GroundingDINO) to understand what was feasible.
-The pipeline went through multiple detector versions, four training experiments, and six approaches that were tested and abandoned. Every failure is documented with root cause analysis. 
-The biggest lesson: study the data before building. 40% of my time was measurement and analysis. Every measured parameter directly informed a pipeline design decision. Detection accuracy jumped from 44% (first version, guessed parameters) to 70.8% (final version, measured parameters) without changing the fundamental approach.
+This project reads the dots back out. It finds each dot, works out which class it belongs to, and maps it onto the original photograph as DeepForest training data.
 
----
-## Pipeline Output
+![the problem](results/cell1_study_images.png)
 
-### The Problem: Annotations Baked Into Screenshots
-![Study Images](results/cell1_study_images.png)
+Left: the screenshot, with the counting tool's dots and its dialog drawn over the photograph. Right: the same photograph, clean. Everything the pipeline needs is on the left, including the legend that says what each marker means.
 
-Four study images spanning the difficulty range. Left: screenshots with colored dots baked in by the counting tool. Right: original high-resolution photographs (no annotations). The pipeline recovers dot positions from the left and maps them to coordinates on the right.
+Data source: `twi-aviandata.s3.amazonaws.com` (Gulf of Mexico avian monitoring, post-Deepwater Horizon).
 
-### Dataset Analysis (49,204 Rows)
-![CSV Analysis](results/cell2_forensic_analysis.png)
+## Status
 
-LAGU (Laughing Gull) dominates at 855K birds. Median image has 61 birds. 18 annotators across 7 years and 5 Gulf Coast states. Every number here informed a pipeline parameter.
+The pipeline runs from the images alone. Survey counts are never an input; the CSV is used only to check the output.
 
-### Measured Dot Properties
-![Dot Properties](results/cell3_dot_properties.png)
+| | Measured | On |
+|---|---|---|
+| Registration success | **96.7%**, 0.38px median reprojection error | 60 pairs |
+| Detection error | **1.24×** median dots found / dots present | 60 pairs |
+| Classification agreement | **0.36** per-class count agreement | 41 frames |
+| Tests | **166** passing, CI on Python 3.10 and 3.11 | |
 
-Dot diameter 8.0px median, 6 distinct annotation colors, circularity 0.57. Measured from 1,199 candidate dots across all study images. These measurements set the detection thresholds — nothing was guessed.
+Detection is close to finished. Classification works but is still weak, and that is the current focus.
 
-### Dots at 8x Zoom
-![Zoomed Dots](results/cell3_zoomed_dots.png)
+![what changed](results/report_fig/fig_improvement.jpg)
 
-Individual annotation dots at 8x magnification showing actual pixel-level rendering. Red, yellow, green, cyan, blue, and magenta dots are clearly distinct from background at this scale.
+## What the data looks like
 
-### Screenshot Decomposition
-![Decomposition](results/cell4_decomposition.png)
+Two weeks went into measuring the data before any pipeline code existed: 533K files mapped in the S3 bucket, 49,204 CSV rows across 60 columns analysed, 25 images downloaded and measured by hand.
 
-3-method consensus boundary detection (grey profile + Sobel edges + color variance) reliably separates the aerial photograph from the dialog box across all screenshot formats.
+![dataset analysis](results/cell2_forensic_analysis.png)
 
-### Detection Results (4 Study Images)
-![Detection](results/cell6_detections_v2.png)
+Laughing Gull is the most common species at 855K birds, not Brown Pelican. The median image holds 61 birds and 65% hold fewer than 100, so the four large study images used early on were never representative. 18 annotators, 7 years, 5 Gulf Coast states.
 
-Detection on 4 study images (deliberately hard cases): D: 62%, B: 69%, A: 51%, C: 48%. Left: detected dots overlaid on aerial. Right: expected vs available vs selected per species. Batch of 30 random images achieves 70.8% overall.
+![dot properties](results/cell3_dot_properties.png)
 
-### Validation: Are These Real Dots?
-![Validation Grid](results/cell7_validation_grid.png)
+Measured from 1,199 dots: median diameter 8.0px, circularity 0.57, six distinct colours. Circularity of 0.57 is what makes shape matching hard, because a dot at this size is barely a shape at all. These measurements set the colour-path thresholds and the template size.
 
-50 detected dots at 6x zoom from Image D. Top rows (high score): clearly real annotation dots with bright red centers. Bottom rows (low score): includes text watermark false positives ("17", "7Ma", etc.) — this is exactly why the text filter was disabled. Birds sitting in colony rows look like text to the algorithm.
+## How it works
 
-### Spatial Distribution
-![Spatial](results/cell7_spatial.png)
+Every screenshot raises two separate questions, handled by different modules.
 
-Detected dots spread across aerial images, not clustered in one area. Coverage ranges from 52-92% of the 5x5 spatial grid per image.
-
-### Coordinate Mapping (Screenshot to Original)
-![Mapping](results/cell8_mapping.png)
-
-Left: dots on screenshot. Right: dots mapped to original high-resolution image. D and C use SIFT homography (0.5px accuracy). B and A use uniform height-based scaling (fallback when SIFT fails).
-
-### Mapped Dots Verification (Zoomed)
-![Zoom Verify](results/cell8_zoom_verify.png)
-
-Top 10 mapped dots on original image at high zoom. Red crosshairs mark the mapped center. Bounding boxes show the annotation region. Birds visible at mapped locations.
-
-### Exported Dataset
-![Dataset Overview](results/cell9_dataset_overview.png)
-
-3,915 recovered annotations across 21 species in DeepForest CSV format. Species distribution, score distribution, per-image counts, and mapping method breakdown.
-
-### Training Experiment: Full Circle
-![Full Circle](results/cell12_full_circle.png)
-
-The complete pipeline story on one image: (1) corrupted screenshot with baked-in dots, (2) 64/93 dots recovered at 69% accuracy,(3) pretrained DeepForest finds 0 high-confidence detections (max score 0.23 — effectively blind on aerial data), (4) fine-tuned model — this panel shows the bfloat16-corrupted run (300 false detections at score 1.0). Root cause identified and fixed in subsequent experiments. 
-See [training analysis](docs/training_analysis.md).
-
-### Training Experiment: SIFT-Only (Root Cause Fix)
-![SIFT Only](results/cell12d_sift_only.png)
-
-Training only on SIFT-mapped images (0.5px position accuracy, 920 annotations) produced the only improvement over pretrained: +29% max score, 0 to 1 high-confidence detection. This confirmed that position accuracy — not data quantity — drives training quality. With 76% fewer annotations but accurate positions, the model improved. With the full dataset (including ~30px position errors), it got worse.
-
-## Results
-
-| Metric | Value |
-|--------|-------|
-| Images processed | 34 (0 crashes) |
-| Detection accuracy | 70.8% |
-| Precision | 98.3% |
-| False positive rate | 1.7% |
-| Annotations recovered | 3,915 |
-| Species detected | 21 |
-| SIFT mapping success | 57% (0.5px error) |
-| SAM 3 habitat classification | 97% |
-| Scene captions generated | 34 |
-| Processing speed | 11 sec/image |
-| Estimated full dataset recovery | ~340,000 annotations |
-
-## What didn't work (and why)
-
-| Approach | Result |
-|----------|--------|
-| OCR on dialog box | 4-15% precision |
-| Dialog color clusters | 8% accuracy | 
-| Narrow HSV bins | 44% accuracy | 
-| Text watermark filter | Removed real dots | 
-| Training on full dataset | 0 high-conf detections |
-| Species-aware boxes | Made it worse | 
-
-## Pipeline
-Screenshot → Decompose → Detect Dots → Validate → Map → Export
-
-1. **Screenshot Decomposition** — 3-method consensus boundary detection
-2. **Dot Detection** — Wide HSV bins, vegetation-adaptive thresholds, count-guided selection from CSV
-3. **Validation** — 98.3% of detected dots land on high-saturation pixels
-4. **Coordinate Mapping** — SIFT homography (0.5px) with uniform fallback (height-based)
-5. **SAM 3 Integration** — Bird validation, habitat classification, scene captioning
-6. **Export** — DeepForest-compatible CSV with train/test split
-
-## Architecture
+| Question | Modules |
+|---|---|
+| Where are the dots, and how many? | `align.py` → `subtract.py` |
+| Which class is each dot? | `legend.py` → `classify.py` |
 
 ```mermaid
 flowchart TB
-    subgraph INPUTS["📥 INPUTS"]
-        SS["🖥️ Corrupted Screenshot<br/>Dots baked into pixels"]
-        OR["📷 Original Photograph<br/>Clean high-resolution"]
-        CSV["📊 CSV Ground Truth<br/>49,204 rows × 60 cols<br/>Per-species counts"]
+    subgraph IN["Inputs"]
+        SS["Screenshot<br/>dots baked into pixels"]
+        OR["Clean original photograph"]
     end
 
-    subgraph STAGE1["Stage 1: Screenshot Decomposition"]
-        GP["Grey Profile"]
-        SE["Sobel Edges"]
-        CV["Color Variance"]
-        GP & SE & CV --> MC["3-Method Consensus<br/>Median Boundary"]
-        MC --> AE["Aerial Region Extracted"]
-        MC --> DI["Dialog Region"]
+    subgraph L["legend.py: read the dialog"]
+        LOC["locate_dialog<br/>find the panel as a box"]
+        PAR["parse_legend<br/>colour, shape, 24x24 template"]
+        OCR["attach_class_names<br/>Tesseract + fuzzy match"]
+        LOC --> PAR --> OCR
     end
 
-    subgraph STAGE2["Stage 2: Annotation Extraction"]
-        HSV["HSV Segmentation<br/>6 Color Channels<br/>Wide Bins"]
-        VB["Vegetation Boost<br/>Green S+50 when<br/>coverage >25%"]
-        CC["Connected Components<br/>+ Distance Transform<br/>Cluster Splitting"]
-        HSV --> VB --> CC
-        CC --> DOTS["Detected Dot<br/>Positions + Colors"]
+    subgraph D["align.py + subtract.py: where the dots are"]
+        SIFT["SIFT + RANSAC registration<br/>returns failure, not a bad warp"]
+        DIFF["chromatic image difference"]
+        SPLIT["distance transform<br/>splits merged dots"]
+        SIFT --> DIFF --> SPLIT
     end
 
-    subgraph STAGE3["Stage 3: Species Assignment"]
-        RO["Rank-Order Matching<br/>Largest color → Most abundant species<br/>CSV counts as ground truth"]
+    subgraph C["classify.py: which class each dot is"]
+        LAB["Lab colour anchoring<br/>to this image's palette"]
+        NCC["NCC template match<br/>within the colour group"]
+        LAB --> NCC
     end
 
-    subgraph STAGE4["Stage 4: Coordinate Recovery"]
-        SIFT["SIFT + RANSAC<br/>2000 keypoints<br/>Lowe ratio 0.75"]
-        UNI["Uniform Fallback<br/>Height-ratio scaling<br/>scale_y for both axes"]
-        SIFT -->|"≥10 matches"| GOLD["🥇 GOLD<br/><1px error"]
-        SIFT -->|"<10 matches"| UNI
-        UNI --> SILVER["🥈 SILVER / 🥉 BRONZE<br/>5-30px error"]
-    end
+    SS --> LOC
+    SS --> SIFT
+    OR --> SIFT
+    SPLIT --> LAB
+    OCR --> LAB
+    NCC --> OUT["dot positions + class labels"]
+    OUT --> MAP["map to original<br/>export DeepForest CSV"]
 
-    subgraph STAGE5["Stage 5: Cross-Validation"]
-        SAM["SAM 3<br/>Text prompt: 'bird'"]
-        IOU["IoU ≥0.05 +<br/>Distance ≤100px<br/>Matching"]
-        HAB["Habitat Classification<br/>5 prompts × all images"]
-        SAM --> IOU
-        SAM --> HAB
-    end
-
-    subgraph STAGE6["Stage 6: Export"]
-        DF["DeepForest CSV<br/>xmin, ymin, xmax,<br/>ymax, label, score"]
-        SPLIT["Train/Test Split<br/>by Colony"]
-        META["Quality Metadata<br/>Tier + Error + Species"]
-        DF --> SPLIT
-        DF --> META
-    end
-
-    subgraph TRAINING["🔬 Training Pipeline"]
-        BIN["Stage 1: Binary<br/>All → 'Bird'<br/>GOLD only"]
-        MIX["Stage 2: Binary<br/>GOLD + SILVER"]
-        SPE["Stage 3: Species<br/>Top 5 labels"]
-        RET["DeepForest RetinaNet<br/>lr=1e-4, focal loss<br/>bfloat16 disabled"]
-        BIN --> MIX --> SPE
-        SPE --> RET
-    end
-
-    subgraph OUTPUTS["📤 OUTPUTS"]
-        ANN["3,915 Annotations<br/>21 Species"]
-        MOD["Fine-tuned<br/>Bird Detector"]
-        HAB2["Habitat Data<br/>97% classified"]
-        CAP["Scene Captions<br/>34 generated"]
-    end
-
-    SS --> STAGE1
-    AE --> STAGE2
-    CSV --> STAGE3
-    DOTS --> STAGE3
-    RO --> STAGE4
-    OR --> STAGE4
-    GOLD & SILVER --> STAGE5
-    GOLD & SILVER --> STAGE6
-    IOU --> STAGE6
-    HAB --> HAB2
-    STAGE6 --> TRAINING
-    TRAINING --> MOD
-    STAGE6 --> ANN
-    STAGE5 --> CAP
+    CSV["Survey CSV"] -.->|"validation only,<br/>never an input"| OUT
 ```
 
-## Key Findings
+### Reading the dialog
 
-- CSV ground truth is 100% accurate — OCR abandoned after testing
-- Wide HSV bins outperform narrow and adaptive approaches
-- Birds in colony rows resemble text — text filter disabled
-- Uniform scale_x is wrong — use scale_y for both axes
-- bfloat16 from SAM 3 silently corrupts DeepForest training
-- Position accuracy matters more than box size or data quantity
-- Full list: [docs/learnings.md](docs/learnings.md)
-- Training details: [docs/training_analysis.md](docs/training_analysis.md)
+The counting tool leaves a floating panel somewhere in the frame listing every class, its marker and its count. `locate_dialog` finds that panel as a box, wherever it sits, and everything outside it stays aerial.
 
-## Repository Structure
-notebook/prototype_v1.ipynb — Complete prototype, 23 sections, runs in Colab
-results/ — All output figures, metrics (JSON), annotations (CSV)
-docs/learnings.md — 21 documented learnings
-docs/training_analysis.md — 4 training experiments with root cause analysis
+![dialog localisation](results/figures/fig1_localization.png)
 
-## Quick Start
+Marker to class is a **per-image** mapping, not a global one, so the pipeline parses each dialog separately and cuts a 24×24 template from each row's own glyph.
 
-Open `notebook/prototype_v1.ipynb` in Google Colab. Set runtime to T4 GPU. Run all cells top to bottom (~45 minutes).
+![marker to class](results/figures/fig2_marker_to_class.png)
 
-## Dataset
+Compare the four dialogs and the reason is plain: a red plus means BRPE wbn in image B and BRPE bird in image D, and a circle means "site" in one image and "chick" in another. A global shape dictionary would get these wrong. Tesseract reads the class names, fuzzy-matched against the 98 species codes, which resolves 80 of the 82 rows shown. Regenerate with `python scripts/make_legend_figure.py`.
 
-Source: twi-aviandata.s3.amazonaws.com — 18,304 annotated screenshots, 49,204 CSV rows, 102 species, 18 annotators, 442 colonies, 7 years (2010-2021), 5 Gulf Coast states.
+### Finding the dots
 
-Full list of learnings: [docs/learnings.md](docs/learnings.md)
+The clean original still exists, so a dot is whatever is present in the screenshot and absent from the photograph. `align.py` registers the two with SIFT and RANSAC, and returns a refusal instead of a bad warp when the match is poor. `subtract.py` takes the difference.
 
-Training experiment details: [docs/training_analysis.md](docs/training_analysis.md)
+A colour threshold tests something different: whether a pixel falls inside a fixed band. Leaves, water glints and red map labels fall inside it too.
+
+![before and after](results/report_fig/fig_beforeafter.jpg)
+
+Dense colonies are the hardest case. Overlapping dots merge into a single blob, so a distance transform splits that blob back into individual markers.
+
+![dense colony](results/report_fig/fig_dense.jpg)
+
+Median dots found divided by dots present, closer to 1.0 being better:
+
+| Band | Colour thresholds | Subtraction |
+|---|---|---|
+| sparse (5–50 dots) | 63.51× | **2.13×** |
+| medium (51–300) | 9.15× | **1.24×** |
+| dense (301+) | 3.56× | **1.14×** |
+| **overall median** | **8.40×** | **1.24×** |
+| symmetric \|log₂\| error | 3.07 | **0.53** |
+
+### Assigning classes
+
+`classify.py` has to separate classes that share a colour, such as BRPE nest, bird and chick, all drawn in red. Each dot is matched to the colours that image's dialog actually uses, in Lab space, then matched by normalised cross-correlation against the templates cut from the dialog rows of that colour.
+
+![classification](results/report_fig/fig_classify.jpg)
+
+Each row shows the dialog marker, the template cut from it, and six aerial patches picked at random from everything assigned to that class. The figure is generated by `scripts/make_classify_figure.py` from the live pipeline, so it always shows current behaviour.
+
+Two measurements disagree, and both are reported:
+
+- **Legend self-recovery, 76–83%.** A legend glyph is shrunk to aerial scale and pushed back through matching to see whether it recovers its own class. This flatters the method, because the template and the test glyph come from the same pixels.
+- **Per-class count agreement on real aerial dots, 0.36.** Assigned counts per class compared against the counts read from the dialog, over 41 frames. Previous matching scored 0.26.
+
+Both numbers appear here so that neither is mistaken for the other. The gap between them is how much of the 76–83% comes from testing the method against glyphs cut from its own templates.
+
+## The benchmark
+
+An earlier four-image set was small enough to overfit, and it used the wrong ground truth. Reading the counting tool's own *Total Count* field settled which column is correct: the dot count is `category_sum`, the sum of the per-class columns, not `total_birds`. `total_birds` excludes chicks and undercounts by up to 57%.
+
+The current benchmark is **63 stratified pairs**: 7 years × 3 density bands × 3 images, across 40 colonies, with dot counts from 7 to 2,037. Density band means the number of annotation dots on the image, not the number of colours: sparse is 5–50, medium 51–300, dense 301 and above. Sampling by band keeps the dense tail in, because that is where detection was always weakest.
+
+### The ground truth needs checking too
+
+One dense frame looked like a bad regression, 450 dots down to 9. Opening it showed why.
+
+![ground truth artifact](results/report_fig/fig_artifact.jpg)
+
+It is a "No photo coverage for this area" frame. There are no dots on it at all, only survey polygons and a text box. Its `category_sum` of 450 is a written estimate. The old detector scored 288 by counting polygon lines.
+
+## Limitations
+
+- **Classification is the weak half.** 0.36 agreement on real aerial dots, and it got worse on 14 of 41 frames. When two classes share both a colour and a shape, their templates score almost level and the winner is close to arbitrary. On one frame WHIB site and WHIB bird scored 0.548 against 0.540 on the same dot, and the two labels swapped wholesale.
+- **No per-dot ground truth exists.** Everything above is scored against counts, so a run that assigns every label wrongly can still score well if the group sizes come out right. Roughly 100 hand-labelled aerial dots are the prerequisite for improving classification against a real target.
+- **Sparse frames still over-detect at about 2.13×.** Vegetation texture is one cause and could be filtered by colour. Red label text and transect lines are the other, and they are the same red as the markers, so colour cannot separate them.
+- **Count OCR reads about 60–65%** of the Count column. The digits are around 10px tall. Class names read well at full resolution; the counts do not.
+
+## Repository structure
+
+```
+src/legend.py       find the dialog, parse each row to marker, colour, shape, template, class, count
+src/align.py        register the clean original onto the screenshot
+src/subtract.py     annotations as image difference; turn ink into dot candidates
+src/classify.py     Lab colour anchoring, then NCC shape matching within a colour
+scripts/            benchmark builders, evaluation harnesses, figure generators
+tests/              166 tests
+notebook/           the earlier Colab prototype, stages 3 to 7
+docs/learnings.md   what went wrong and why
+```
+
+`src/decompose.py` and `src/detect.py` are kept for reference and are not part of the live pipeline. `decompose.py` split each screenshot at roughly half its width, which discarded much of the aerial and the birds in it; `legend.locate_dialog` replaced it. `detect.py` needs CSV counts as an input, which breaks the rule that the pipeline works from the image alone.
+
+## Quick start
+
+```bash
+pip install -r requirements.txt          # full
+pip install pytest numpy opencv-python scikit-image PyYAML scipy   # tests only
+
+pytest tests/ -q                         # 166 passing
+
+python scripts/build_manifest.py && python scripts/build_benchmark.py --per-cell 3
+python scripts/eval_detection.py         # old vs new vs category_sum
+python scripts/eval_alignment.py         # registration success rate
+```
+
+Class-name OCR needs the Tesseract binary, not just `pytesseract`. On Windows: `winget install UB-Mannheim.TesseractOCR`. The pipeline skips OCR and keeps parsing if Tesseract is missing.
+
+All tunable parameters live in `config.yaml`.
+
+## About this work
+
+Built with guidance from the DeepForest maintainers and past contributors, who walked me through the open-source contribution process as well as the research. Before writing pipeline code I spent two weeks studying the data, and I would do that again: roughly 40% of the time on this project has been measurement rather than building, and almost every parameter in `config.yaml` traces back to something measured rather than guessed.
+
+The pipeline has been through several detector versions, four training experiments, and a number of approaches I tested and dropped. I wrote up each dropped approach with its root cause, which turned out to matter: two of them had been abandoned for the wrong reason. OCR is the clearest case. I rejected it at 4% precision, but that test ran on a fixture 2.3× smaller than a real screenshot, and at full resolution it works.
+
+The lesson I keep relearning is to check what is actually being measured before trusting the number. Detection was scored against the wrong CSV column for weeks, and the four-image test set was small enough that tuning against it looked like progress.
+
+## The earlier prototype
+
+`notebook/prototype_v1.ipynb` is a 23-section prototype that runs in Colab on a T4 GPU in about 45 minutes. Stages 3 to 7 still live there and have not yet been rewritten as modules: coordinate mapping, SAM 3 validation, DeepForest training and export.
+
+![coordinate mapping](results/cell8_mapping.png)
+
+Stage 4 is the one that matters next: dots read off the screenshot, placed onto the clean original. SIFT homography puts them within about 0.5px; the height-ratio fallback used when SIFT fails is roughly 30px out, and that error is what limited training.
+
+Its numbers were measured differently from the ones above and are not comparable. Detection there was scored at 70.8% on 30 random images, against `total_birds` and using CSV counts as a pipeline input. Both of those are now known to be wrong: `total_birds` is the wrong column, and feeding the pipeline the answer it is meant to produce is not a fair test. The 63-pair benchmark replaced it.
+
+What the prototype did establish still holds. Training on 920 SIFT-mapped annotations at 0.5px accuracy improved on pretrained DeepForest by 29% in max score, while training on all 3,851 annotations including entries with about 30px position error made the model worse. Position accuracy matters more than the amount of data, which is why registration quality is gated rather than assumed.
+
+Details: [docs/training_analysis.md](docs/training_analysis.md).
+
+## What did not work
+
+| Approach | Result |
+|---|---|
+| Narrow HSV colour bins | 44% detection; dots vary more than expected |
+| Text watermark filter | Removed real birds; colony rows look like text |
+| Uniform `scale_x` for mapping | 23–39% horizontal stretch; use `scale_y` for both axes |
+| Species-aware box sizes | Worse, because positions were the real problem |
+| Training on the full dataset | 0 high-confidence detections |
+| Colour filtering during detection | Cut one sparse frame from 129 detections to 1, against a true count of 9 |
+
+Full list: [docs/learnings.md](docs/learnings.md).

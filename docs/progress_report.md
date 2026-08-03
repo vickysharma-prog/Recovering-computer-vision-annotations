@@ -1,0 +1,1137 @@
+# GSoC 2026: Progress Report
+**Project:** Recovering Bird Annotations from Historical Airborne Imagery
+**Organization:** WeeCology / DeepForest (University of Florida)
+**Contributor:** Vicky Sharma
+**Mentor:** Josh Veitch-Michaelis
+**Repo:** github.com/vickysharma-prog/Deepforest-bird-recovery-prototype
+**Last updated:** 2026-08-04 (detection wired into classification; classification A/B on 41 frames; README + learnings rewritten for current state)
+
+> **READ THIS FIRST: two earlier claims in this document have been retracted.**
+> They are left in place with correction notes rather than deleted, because the
+> reasoning that produced them is instructive.
+> 1. **`total_birds` is NOT the dot-count ground truth** (corrected 2026-07-20).
+>    Every detection accuracy figure dated before 2026-07-20: including the
+>    headline "70.8%" and the four study images' "true" counts: was measured
+>    against the wrong quantity. See *Ground Truth Correction*.
+> 2. **The count-prior (w=0.9) result was retracted** (2026-07-01). It games the
+>    metric it is scored on rather than improving classification. See the
+>    correction note on that section.
+>
+> Current state in one line: **detection is close to done and classification is the
+> weak half.** Alignment 96.7%, detection error 8.40x -> **1.24x** median, subtraction
+> now feeds the classifier directly (`detect_dots_subtract`), classification
+> agreement **0.26 -> 0.36** measured on 41 frames. All of it is on **PR #7**
+> (branch `feat/detection-pipeline`), CI green, **166 tests** pass. Remaining
+> weaknesses: sparse over-detection 2.13x, and classification, which cannot be
+> improved further without hand-labelled dots.
+
+---
+
+## Problem Statement
+
+The 2010 Deepwater Horizon oil spill triggered the largest avian monitoring effort in Gulf Coast history. Scientists captured **18,304 aerial survey photographs** and annotated **340,000+ bird observations** using a point-counting tool that baked colored dots directly into screenshot pixels. No coordinate data was saved. The annotations exist visually but are inaccessible to any machine learning pipeline. This project recovers them.
+
+**Dataset:** twi-aviandata.s3.amazonaws.com, 18,304 screenshots, 49,204 CSV rows, 102 species, 18 annotators, 442 colonies, 7 years (2010–2021), 5 Gulf Coast states.
+
+---
+
+## Approach: Study First, Build Second
+
+Before writing any pipeline code, two weeks were spent on data archaeology:
+- Mapped 533,000 files across the S3 bucket
+- Analyzed 49,204 CSV rows across 60 columns
+- Physically measured 25 diverse images
+- Tested SAM 3, DeepForest, and GroundingDINO on raw screenshots
+
+Every pipeline parameter was **measured, not guessed.** Detection accuracy improved from 44% (guessed parameters) to **70.8%** (measured parameters) without changing the fundamental approach.
+
+---
+
+## Pipeline
+
+```
+Screenshot → Decompose → Detect → Validate → Map Coords → Export → Train
+```
+
+| Stage | Module | Status |
+|-------|--------|--------|
+| Decompose | `src/decompose.py` | Done, CI passing. **Superseded** for the legend path by `legend.locate_dialog` (the 50%-width split discarded half the aerial) |
+| Detect (colour) | `src/detect.py` | **Legacy**: needs CSV counts; not wired into anything live (only its own tests). The self-contained colour baseline/fallback is `classify.detect_dots` |
+| Legend (per-image marker→class) | `src/legend.py` | Done, CI passing (PR #3). `locate_dialog` succeeds on ~90% of a 21-image sample, but "returned a box" ≠ correct, false positives seen |
+| Classify (aerial dots vs legend) | `src/classify.py` | Done. Lab colour anchoring + NCC. Within-colour separability D 55→76%, A 56→83% |
+| **Align (screenshot ↔ clean original)** | **`src/align.py`** | **NEW 2026-07-20, 96.7% success (58/60), 0.38px median error** |
+| **Subtract (difference-based detection)** | **`src/subtract.py`** | **NEW 2026-07-20, detection error 8.40x → 1.46x median. Dense solved (1.01x); sparse still 6.07x** |
+| Validate | `src/validate.py` | Not started as a module (notebook only) |
+| Map coords | `src/map_coords.py` | Not started as a module (notebook only) |
+| Export | `src/export.py` | Not started as a module (notebook only) |
+| Pipeline | `src/pipeline.py` | Not started as a module |
+| Full run (18,304 images) |, | Blocked on detection clearing its gate |
+
+**Test count: 163 passing** (143 prior + 20 new for align/subtract).
+**Branch `feat/legend-pipeline` is UNCOMMITTED**: deliberately held until detection
+is satisfactory.
+
+### Stage 1: Decompose (`src/decompose.py`)
+3-method consensus separates aerial photograph from species dialog:
+1. **Grey profile**: first column with high grey pixel fraction
+2. **Sobel edges**: strongest vertical edge
+3. **Color variance drop**: first low-variance column
+
+Final boundary = median of 3 candidates. Robust across all screenshot formats. Also strips Windows title bars and taskbars.
+
+### Stage 2: Detect (`src/detect.py`)
+Wide HSV bins across 6 color channels (red, yellow, green, cyan, blue, magenta) maximize recall. Key behaviors:
+- **Vegetation-adaptive saturation boost** (+30 to +70 S units) prevents green dot suppression in habitat-dense images
+- **Distance transform** splits merged/overlapping dot clusters
+- **Rank-order species assignment** from CSV: largest detected color group → most abundant species
+- **Top-N selection** where N = expected count from CSV (drives precision)
+
+### Stage 3: Validate (notebook → module in progress)
+HSV saturation sampled at each dot center confirms real annotation dots (S ≥ 120) vs. false positives (S < 80). Spatial distribution check across 5×5 grid confirms dots are not clustered. Overall plausibility: **98.3%**.
+
+### Stage 4: Map Coords (notebook → module in progress)
+- **SIFT + RANSAC** (2,000 keypoints, Lowe ratio 0.75): maps screenshot → original photo at **0.5 px accuracy** when ≥10 matches found (57% of images)
+- **Uniform height-ratio scaling** (fallback): uses `scale_y` for both axes, ~5–30 px error (43% of images)
+
+### Stage 5: Export (notebook → module in progress)
+DeepForest-compatible CSV: `xmin, ymin, xmax, ymax, label, score`. Train/test split by colony prevents geographic leakage.
+
+### Training Pipeline (notebook)
+| Experiment | Annotations | Result | Root cause |
+|---|---|---|---|
+| Binary, all data | 3,851 | All scores = 1.0 | SAM 3 bfloat16 autocast persisted after deletion |
+| Binary, bfloat16 fixed | 3,851 | Fewer detections than pretrained | Fixed 80×80 boxes → borderline IoU |
+| Species-aware boxes | 3,851 | Zero detections | ~30px position errors from uniform mapping |
+| **SIFT-only** | **920** | **+29% max score, 1 high-conf detection** | Position accuracy > data quantity |
+
+**Critical bug found and fixed:** SAM 3 returns bfloat16 tensors that silently corrupt coordinate precision during DeepForest training. Explicit `torch.cuda.amp.autocast(enabled=False)` before training resolved 300 false detections at score 1.0.
+
+---
+
+## Results
+
+> **⚠️ The table below is measured against `total_birds` and is unreliable.**
+> See *Ground Truth Correction*. Current, correctly-grounded numbers:
+>
+> | Metric (63 stratified pairs, vs `category_sum`) | Value |
+> |---|---|
+> | Alignment success | **96.7%** (58/60) |
+> | Alignment reprojection error | median **0.38px** |
+> | Detection ratio: OLD colour | 8.40x over |
+> | Detection ratio: NEW subtraction | **1.46x** over |
+> | …dense band | **1.01x** |
+> | …medium band | 1.42x |
+> | …sparse band | 6.07x (open) |
+> | Symmetric error, median \|log2 ratio\| | 3.07 → **0.73** |
+> | Within-colour classification (self-recovery) | D **76%**, A **83%** |
+> | Tests | **163 passing** |
+
+| Metric | Value |
+|--------|-------|
+| Images processed | 34 (0 crashes) |
+| Detection accuracy (batch of 30) | **70.8%** (vs `total_birds`: unreliable) |
+| Detection accuracy (4 hard study images) | 52.3% |
+| Precision | **98.3%** |
+| False positive rate | 1.7% |
+| Annotations recovered | 3,915 |
+| Species detected | 21 of 102 |
+| SIFT mapping success (0.5 px error) | 57% |
+| Uniform fallback (~5–30 px error) | 43% |
+| SAM 3 habitat classification | 97% |
+| Processing speed | 11 sec/image |
+| Estimated full dataset recovery | ~340,000 annotations |
+| DeepForest pretrained max score on aerial | 0.376 (blind) |
+| DeepForest SIFT-trained max score | 0.300 (+29%) |
+| High-confidence detections after fine-tuning | 1 (vs 0 pretrained) |
+
+---
+
+## What Failed and Why
+
+| Approach | Result | Root cause |
+|---|---|---|
+| OCR on dialog legend | 4–15% precision | Font rendering inconsistent across 18 annotators |
+| Dialog color clustering | 8% accuracy | Colors bleed across species rows in dialog |
+| Narrow HSV bins | 44% detection | Missed faded and edge-rendered dots |
+| Text watermark filter | Removed real dots | Colony-row birds match text alignment heuristics |
+| Training on full dataset | 0 high-conf detections | ~30px position errors corrupted gradient signal |
+| Species-aware boxes | Worse than baseline | Added noise to a geometrically simple problem |
+
+---
+
+## Mentor Feedback (Josh Veitch-Michaelis)
+
+### Round 1: Status (updated 2026-06-29)
+| Feedback | Status |
+|---|---|
+| Re-run detection without combining classes, nest vs bird distinction matters | **DONE**: classify.py separates same-colour classes by shape/template |
+| Look into template matching (convolution) as follow-up to colour | **DONE**: within-colour assignment uses template correlation |
+| PR needs 2 sentences explaining it + 2 sentences explaining the plots | **DONE**: figure README + meeting doc |
+| Show a test image with fake dots to explain bar chart differences | **DONE**: `results/figures/fig5_color_vs_shape.png` |
+| Whenever using comparative words, give both numbers with definitions | **Applied** in all docs/figures (e.g. recall A 36/B 77/C 90/D 69%) |
+
+### Round 2: Category assignment problem (resolved in discussion)
+
+**Josh's concern:** "Within each color group, dots will be proportionally assigned to categories based on CSV ratios", this reads like a random assignment, which would be incorrect.
+
+**Root cause of the problem:** Current code assigns dots of a given color to one species; sub-categories (WBN, Site, Nest, etc.) were being split proportionally within a color group, effectively random because no spatial or shape signal distinguishes them.
+
+**Agreed solution (from call):** The dialog box in each screenshot contains the legend, each row shows a colored marker icon + class name + count. Parse the dialog legend per image to extract the (marker shape + color) → class mapping automatically. Use the extracted icons as templates to classify dots by both shape and color.
+
+**Key principle Josh stated:** *"The detector would ideally work without an annotation file."* The detector should be fully self-contained, reading class names, marker shapes, colors, and counts directly from the dialog box. The CSV then serves only as validation ground truth to check retrieval accuracy.
+
+**Agreed plan:**
+1. Parse dialog legend per image → extract (icon, class name) pairs
+2. Use extracted icons as templates for shape+color matching in aerial region
+3. Works for any image in isolation, handles class map changes between images automatically
+4. CSV counts used only for validation, not for class assignment
+
+---
+
+## Problems Solved
+
+| Problem | Solution |
+|---|---|
+| OCR on dialog giving 4–15% precision | Abandoned; CSV has same data at 100% accuracy |
+| Color-from-dialog mapping giving 8% accuracy | Switched to count-based rank-order matching |
+| Text watermark filter removing real bird dots | Disabled; aspect ratio filter (>3:1) catches actual text |
+| Red hue wrapping in OpenCV HSV (0–180 scale) | Circular mean using sin/cos in `circular_mean_hue()` |
+| Scale_x fallback giving 23–39% horizontal stretch | Use `scale_y` for both axes, aerial not cropped vertically |
+| SAM 3 bfloat16 persisting after model deletion | Explicit autocast disable before DeepForest training |
+| 44% accuracy with narrow HSV bins | Widened to full color regions measured from 1,199 real dots |
+| Training on full dataset: 0 high-conf detections | SIFT-only training, position accuracy > data quantity |
+| Category assignment was effectively random | Agreed to parse dialog legend per image (in progress) |
+
+---
+
+## Legend Parser: Work Log (2026-06-27)
+
+Started the dialog-legend parser (Josh's category-separation ask). Key outcomes:
+- Pulled 4 full-res screenshots from S3 (A/B/C/D study images). Confirmed the repo fixture is ~2.3× downscaled, markers are 5–7px there vs 12–18px at full res.
+- **Confirmed (shape, color) → class per image**, and that the shape→category map is **not global** (e.g. "Site" = ● in D but ✳ in A/B). Validates the per-image, self-contained approach.
+- Built `src/legend.py` (blob-anchored rows, per-row glyph/template/color, first-pass `locate_dialog`) and `scripts/run_legend.py`. Saved 4 real dialog crops + hand-read ground truth (`docs/legend_groundtruth.md`).
+- **Two open blockers:** (1) parser needs a full-res retune, asterisk/plus markers fragment into multiple blobs and corrupt the row-pitch estimate; (2) robust dialog localization (floating window, variable position): title-bar method works on 2/4.
+
+Full write-up for Josh: `docs/legend_findings.md`.
+
+## Legend Pipeline: Work Log (2026-06-29): major progress
+
+Built the full automatic pipeline end-to-end. Now runs on a raw screenshot:
+`parse_screenshot` (locate dialog as a box + parse legend) → `attach_class_names`
+(OCR + fuzzy-match) → `detect_dots` (split clusters) → `assign_classes` →
+`select_by_count`.
+
+**What got solved this session:**
+- **Parser retuned for full-res** (scale-adaptive): removed thumbnail-tuned area/size caps; row pitch from the single-row gap floored at marker size; marker column = densest x-cluster (not median, fixed image B); dropped the MORPH_OPEN that eroded thin asterisk/plus arms. Rows now within ±1 on all 4 dialogs; colour ~90%; the `+`=Bird shape detects reliably.
+- **Class names via OCR**: installed Tesseract (winget UB-Mannheim); `attach_class_names` reads each row, fuzzy-matches to the 98 species codes + category words ("BAPE"→BRPE). **Image D: species 15/15, no CSV.**
+- **Aerial dot classification** (`src/classify.py`): colour + within-colour template/shape match. Same-colour classes separated (red → BRPE wbn/bird/chick/brood).
+- **Recall fix (cluster splitting):** overlapping dots in dense colonies were undercounted (61%); distance-transform splitting → **~100% recall** (D: 637 vs 636 true).
+- **Boundary fix (Josh's other meeting issue):** the old decompose split each screenshot at ~50% width (full-height-panel assumption), discarding ~half the aerial. `locate_dialog` now finds the dialog as a **box** anywhere in the frame. **Localization 14/14 (100%)** across 4 study + 10 unseen S3 images (`docs/scale_validation.md`).
+- **Precision fix:** quality score (sat×val) + `select_by_count` (top-N per class by the legend's own count). Noisy image B: **1278 → 92 dots** (truth 117).
+
+**Results (recall after selection):** A 36%, B 77%, C 90%, D 69%. (A is a dense 1407-bird colony, limited by aerial shape accuracy.)
+
+**Deliverables produced:** 5 result figures + README (`results/figures/fig1-5_*.png`),
+scale validation (`docs/scale_validation.md`), and a meeting document
+(`docs/GSoC_meeting_2026-06-29.docx`: built with python-docx; also a matplotlib
+PDF but DOCX is the reliable one for browser viewing).
+
+**Two open gaps, partially closed in the next session (see below):** (1) count-OCR coverage ~60-65% on ~10px digits; (2) aerial within-colour shape split ~60-70% (hardest on dense colonies).
+
+## Legend Pipeline: PR & module hardening (2026-06-30)
+
+Packaged the legend module as a reviewable PR and brought it to the repo's
+tested-module bar. **PR: github.com/vickysharma-prog/Deepforest-bird-recovery-prototype/pull/3**
+(branch `feat/legend-pipeline` → `main`).
+
+**What this session added:**
+- **Test suites**: `tests/test_legend.py` (40) and `tests/test_classify.py`:
+  synthetic-glyph shape classification (circle/square/plus/ring), colour naming
+  (red hue-wrap), template similarity, cluster splitting, OCR text-parsing
+  (species fuzzy-match), and real-screenshot integration over the 4 study images
+  (skip cleanly when fixtures absent). **Full suite: 143 passing.**
+- **CI fix**: `tests.yml` was UTF-16 encoded, which GitHub Actions rejected
+  ("invalid workflow file, no jobs run"); rewrote it as UTF-8. It now installs
+  `scipy` (needed by `classify.py`) and runs all four test files (previously only
+  `test_decompose.py`). CI green on the branch.
+- **Config centralization (Josh's good-practice point)**: moved all of
+  `legend.py`'s tunables into the `legend:` section of `config.yaml` so every
+  module's configuration lives in one file. Values were reconciled to the
+  module's actual numbers and verified **byte-for-byte identical** detection
+  output on all 4 fixtures before/after (snapshot diff): no behaviour change.
+- **PR scope**: code + tests + CI + 5 figures + the 4 study-image fixtures.
+  Working-notes docs kept out of the repo (for our own reference). Notebook left
+  on its `main` version: the legend pipeline runs via `scripts/run_legend.py`,
+  and the notebook will get a proper end-to-end legend section once the module
+  is built out further.
+
+**Libraries used (legend module):** OpenCV (HSV segmentation, connected
+components, contours, distance transform), NumPy, SciPy (`ndimage` label /
+maximum_filter for cluster splitting), PyYAML (config), and Tesseract via
+`pytesseract` (class-name + count OCR, degrades gracefully when absent).
+
+## Legend Pipeline: Incremental gap work (2026-06-30, continued)
+
+Two targeted improvements to the two open gaps from the 2026-06-29 session,
+validated while awaiting Josh's review on PR #3.
+
+### 1. Count-OCR (B-style wide-dialog fix)
+
+**Root cause identified:** B's dialog has a wide Count column (strip width ≈185 px
+from `cx + pitch*8` to the right edge). The strip's left portion falls in the
+class-name area, Tesseract reads name text as digits even with a digit whitelist.
+A/C/D strips are ≤141 px and land correctly in the count column.
+
+**Fix (`src/legend.py` → `_ocr_count`):** clips strips wider than 145 px to their
+rightmost 80 px, aligning the window with the right-justified digit. Narrower strips
+are unchanged (no regression on A/C/D).
+
+**Result:** B count-OCR exact match: **57% → 79%** (11/14 rows correct).
+
+**Scale image check:** ran on 10 unseen S3 images. The clip triggers for
+img_02 (224 px) and img_03 (151 px); those images had already-wrong totals (8, 15
+respectively) and the clip changes them to other wrong values, an honest
+representation of unreadable digits rather than false-confidence counts. img_08
+(Dry Bread, Σcount=0 in `scale_validation.md`) has 73 px strips, the clip does
+not fire; img_08's zero-count problem is a digit-recognition failure, not a strip
+position error.
+
+### 2. Count-prior for within-colour shape assignment
+
+> **⚠️ RETRACTED (2026-07-01, later the same day). Do not cite these numbers.**
+> The "+35 pp / +49 pp" gains below are an artefact of the metric, not a real
+> improvement in classification. The attributable-dots metric credits a class up
+> to its legend count; feeding that same count in as a prior therefore moves the
+> score toward the count **by construction**, whether or not any individual dot
+> was labelled correctly. Shape accuracy did not improve. The honest baseline is
+> **w=0: A 38.6%, C 46.7%**. The change was parked in a git stash and is **not in
+> the shipped code** (`src/classify.py` ships with the shape-name boost removed
+> and no count prior: that configuration was selected by ablation, see
+> *Matching Rework*). Kept here because the failure mode: scoring a method on a
+> quantity you also feed it: recurred later and is worth recognising on sight.
+
+**Root cause identified:** Aerial dot glyphs at full res are compact enough that
+shape classification returns "unknown" for 69% of dots in image A. Template
+similarity consistently favours the circle legend template (compact blobs look
+circle-like), so all "unknown" dots in a same-colour group go to the circle class
+regardless of the true marker distribution.
+
+**Fix (`src/classify.py` → `assign_classes`):** for "unknown"-shape dots in a
+colour group with ≥2 candidates, blend template similarity with count proportion
+from the dialog's own Count column:
+
+    score = (1 - w) * template_sim + w * (entry_count / colour_group_total)
+
+Default `count_prior_weight=0.9`: count proportion dominates. Dots with a
+resolved shape (circle/plus/star) are unaffected and continue to use
+template+shape correlation only.
+
+**Validation, attributable-dots metric** (`attributable = Σ_class min(detected,
+legend_count) / Σ_class legend_count`): this is the right metric, it credits a
+class only up to its expected count so over-assignment does not inflate the score.
+Measured on all 4 study images before (w=0) and after (w=0.9):
+
+| Image | Legend sum | w=0 recall | w=0.9 recall | delta |
+|-------|-----------|-----------|-------------|-------|
+| A (felicity 2012) | 1105 | 38.6% | 73.7% | **+35 pp** |
+| B (gaillard 2011) | 449  | 14.9% | 14.9% | 0 pp |
+| C (northdeer 2010)| 242  | 46.7% | 95.9% | **+49 pp** |
+| D (raccoon 2011)  | 568  | 76.1% | 76.2% | +0.2 pp |
+
+A and C improve substantially. D is flat (not regressed despite 4 same-colour red
+sub-classes). B is flat, its problem is wrong colour assignment on background
+false positives, which count-prior (a within-colour fix) cannot address.
+
+**3 new tests** added to `tests/test_classify.py` (explicit `count_prior_weight=0.9`
+on all three): count-prior overrides template for "unknown" shape; shape-known dots
+are unaffected; total_count=0 falls back to template. **Total suite: 146 passing.**
+
+---
+
+## Image B: Deep Diagnostic (2026-07-01)
+
+> **⚠️ CORRECTION (2026-07-01, later): the core premise of this section is WRONG.**
+> B's Count column is **NOT blank.** The counts are all present in the dialog
+> (24, 24, 0, 0, 2, 4, 22, 12, 1, 14, 7, 2, 4, 1 = 117). The real root cause was
+> **dialog localization**: `locate_dialog` cropped B's dialog ~111px too narrow
+> because B's long class names ("BRPE chick nest w/o adult") widen the Name
+> column, and the fixed marker-relative right edge (`mx + msize*30`) cut off the
+> entire Count column: so the counts only *looked* blank. There is **no
+> "site=444" real value**; that was OCR reading a border artifact in the
+> cut-off/wrong strip. Fixes shipped: (1) `locate_dialog` extends the right edge
+> to the grey panel's own border (B bbox 369→496); (2) `attach_class_names`
+> splits Name vs Count at the table's own vertical gridlines. Result: **B counts
+> 0→10/14 correct; C "LAGU site" 134→13; D stable; names not regressed; 83 tests
+> pass.** Ignore Root causes 1–3 below (blank column / site=444 / 145px clip): 
+> they were built on the cropped-dialog artifact. Caught by checking the count
+> column against the source dialog image.
+
+### Decision: fix B before moving to the next pipeline stage
+
+This is a real project that needs to scale to 18,304 images. B's 14.9% attributable
+recall is unacceptable at scale, rocky-background sites like B will recur across
+the full dataset. User decision: **fix B first before advancing to map_coords /
+export / train.**
+
+### What the diagnostic revealed
+
+A dedicated diagnostic script (`diagnose_B.py`) was run on `B_gaillard_2011.jpg`
+(1408×649 px, 16 legend entries). The dialog crop was also saved and inspected
+visually (`B_dialog_crop.png`). Full findings below.
+
+#### Detected dot colour distribution
+
+| Colour | Count | Median quality (sat×val) | Interpretation |
+|--------|-------|--------------------------|----------------|
+| green  | 495   | 0.122 (LOW)              | vegetation / background false positives |
+| blue   | 246   | 0.510 (HIGH)             | **likely real LAGU birds** |
+| red    | 244   | 0.543 (HIGH)             | **likely real BRPE birds** |
+| orange | 109   | 0.142 (LOW)              | rocky background; orange NOT in legend → unassigned |
+| grey   |  62   | 0.084 (VERY LOW)         | background texture; assigned to "site" |
+| yellow |  86   | 0.120 (LOW)              | background; small noise |
+| magenta|  11   | 0.298 (moderate)         | probably real WHIB adult |
+| cyan   |   3   | 0.672 (HIGH)             | probably real ROYT adult |
+
+Total raw detected: 1278. Dots in a legend colour: 1147 / 1278 = 89.7%.
+The high-quality red (244) and blue (246) dots are almost certainly real birds. Detection is working. The problem is downstream: wrong counts in the denominator,
+and inability to filter low-quality false positives without valid per-row counts.
+
+#### Legend OCR output (what the pipeline reads from B's dialog)
+
+| Class | Colour | Shape | Count (OCR) | Reality |
+|-------|--------|-------|-------------|---------|
+| BRPE WBN | red | plus | None | blank in dialog |
+| BRPE chick | red | ring | None | blank in dialog |
+| BPRE empty nest | red | square | None | blank in dialog |
+| BPRE aband. nest | red | ring | None | blank in dialog |
+| BRPE chick nest w/o adult | red | circle | 1 | misread |
+| LAGU site | blue | star | None | blank in dialog |
+| BRPE adult | red | circle | None | blank in dialog |
+| LAGU stand | blue | circle | None | blank in dialog |
+| BRPE Imm. in colony | red | plus | None | blank in dialog |
+| CAGO adult | green | plus | 1 | misread |
+| WHIB adult | magenta | plus | 1 | misread |
+| unid. duck | yellow | ring | None | blank in dialog |
+| ROYT adult | cyan | square | 1 | misread |
+| SATE adult | yellow | square | 1 | misread |
+| site | grey | square | **444** | **MISREAD, cell is blank** |
+| ad | grey | square | None | blank in dialog |
+
+**Total OCR legend sum: 449** (445 of which is from the "site=444" misread).
+
+#### Root cause 1: The Count column in B's dialog is entirely blank
+
+Inspecting the dialog image visually confirms: **B's annotator did not fill in
+per-species counts.** All per-row Count cells are empty. The only count information
+is the **"Total Count: 117"** visible in the bottom-left corner of the dialog box
+(the tool's running total, not per-species). This is a valid real-world scenario. some annotators count total birds without breaking down by species in the Count column.
+
+The pipeline currently only reads per-row counts; it has **no code to read the
+"Total Count:" header value.** When all per-row counts are None, `select_by_count`
+has no data → all 1278 raw dots are kept → 10x over-detection (1278 vs 117 true).
+
+#### Root cause 2: "site = 444" is an OCR misread of an empty cell
+
+The `_ocr_count` function in `src/legend.py` uses a blank-cell heuristic:
+`return 0 if dark < 6 else None`. The "site" row's strip has enough table-border
+dark pixels to exceed the threshold → instead of returning None (or 0), Tesseract
+reads the border artifacts and returns 444. This single misread inflates the
+denominator from ~5 to 449, making the attributable recall look like 14.9%
+when it should be computed against a much smaller denominator.
+
+Without the "site=444" misread, the OCR legend sum would be ~5
+(4 rare species misread as count=1 each). Even at 100% recall on those 5 classes,
+the metric would be 5/5 = 100%, but that's too small a denominator to be
+meaningful without the major BRPE/LAGU classes.
+
+#### Root cause 3: The 145 px count-OCR clip does NOT fire for B
+
+Correcting a claim from the previous session: B's strips are **110 px wide**
+(measured: `cx≈99, pitch=20 px, pitch×8=160, strip = dialog_width - 259 = 110 px`).
+The clip threshold is 145 px, so **the clip never fires for B**. The "B 57%→79%"
+count-OCR improvement claim from 2026-06-30 needs re-examination, either it was
+measured against a different fixture, or the improvement came from another change
+in that session. The 145 px fix is confirmed correct for `img_02` (224 px) and
+`img_03` (151 px), but not for B's dialog.
+
+#### Root cause 4: Grey "site" markers are invisible to HSV colour segmentation
+
+If B truly has 444 nest-site markers (grey squares baked into the aerial), they
+have low saturation (grey ≈ 0 in HSV S channel) and would not pass the `sat > 80`
+threshold in `_dot_centers`. The 62 "grey" detected dots are background texture
+that barely passed the threshold, they are NOT the actual grey square markers.
+Grey marker detection would require a separate low-saturation detection pass.
+
+#### What the quality-threshold test showed
+
+Applying a quality minimum filter to try to remove false positives:
+
+| Threshold | Dots remaining | Attributable recall |
+|-----------|----------------|---------------------|
+| (none)    | 1278           | 14.9%               |
+| ≥ 0.10    | 1146           | 2.4% (WORSE)        |
+| ≥ 0.15    |  629           | 1.1% (WORSE)        |
+
+Raising the quality threshold HURTS, the 62 "grey site" dots (quality 0.084)
+are the main source of attributable recall (they contribute 62/67 attributable
+hits against the misread "site=444" denominator). Filtering them out drops recall.
+This confirms that the quality-threshold approach cannot fix B; the denominator
+and count-reading problems must be fixed first.
+
+### Two targeted fixes planned for B
+
+#### Fix A: Read "Total Count:" from dialog header as fallback
+**Code location:** `src/legend.py` → `attach_class_names()` or a new helper.
+When all per-row counts come back as None (or sum to 0), the pipeline should
+attempt to OCR the "Total Count: NNN" text visible in the dialog's UI header area.
+Use this total as a soft cap for `select_by_count` (keep the N highest-quality
+dots regardless of class, where N = total count from header). The "Total Count"
+text is on the left panel of the dialog, separate from the row table.
+
+#### Fix B: Tighten the blank-cell heuristic in `_ocr_count`
+**Code location:** `src/legend.py` → `_ocr_count()`, line: `return 0 if dark < 6 else None`.
+The current threshold of 6 dark pixels is too permissive, table borders push
+border-adjacent cells above 6. Fix options:
+1. Raise the threshold (e.g. `dark < 15`) so cells with only border artifacts
+   return 0 (blank) instead of triggering Tesseract on noise.
+2. Add a cell-content check: if Tesseract returns no digits AND the strip shows
+   no obvious digit-like dark region, return 0 instead of None.
+3. Check if the strip is dominated by uniform light grey (background) rather than
+   text-colour contrast.
+
+Priority: Fix A first (Total Count fallback) because even with correct blank-cell
+detection. B still has no per-row counts to use for `select_by_count`.
+
+### What B's ideal outcome looks like (post-fix)
+
+After the two fixes, for B we expect:
+- `attach_class_names` reads "Total Count: 117" → treats as total cap
+- `_ocr_count` returns None/0 for all 16 blank per-row count cells (no "444" misread)
+- `select_by_count` keeps top-117 dots by quality across all classes
+- Top 117 dots: ~3 cyan (ROYT, quality 0.67) + ~11 magenta (WHIB, quality 0.30)
+  + ~103 from red/blue (BRPE/LAGU, quality 0.51–0.54)
+- These 117 dots are correctly colour-assigned → recall against "117" total ≈ high
+- Attributable metric becomes meaningful: denominator = 117, not 449
+
+Grey "site" markers (if any truly exist in B's aerial) remain undetectable until
+a separate low-saturation detection pass is added. This is a **follow-up gap**,
+not part of the immediate fix.
+
+## Matching Rework: Josh's three asks (2026-07-10)
+
+Josh identified the genuinely hard part of the project: separating classes that
+**share a colour** on the aerial (within-colour accuracy was ~60–70%, image A as
+low as 36%). He saw two concrete failures, a red star matched to circles, and
+yellow matched to nothing, and gave three directions, plus one correction.
+
+**His correction:** BRPE WBN vs brood are *different colours* (light vs dark red),
+not identical markers, so the pair is separable, not a floor. Confirmed: hue
+barely varies within a colour group; **brightness** is what separates them, which
+is why the anchoring space has to include value, not hue alone.
+
+| Ask | What was built | Outcome |
+|---|---|---|
+| 1. Anchor colour to the dialog's **own** palette per image, not global bins | `_legend_palette` + `_color_candidates` in `classify.py`, in **Lab** space, with a max-distance reject for off-palette noise | Within-colour D 55→73%, A 56→68% |
+| 2. Implement **background removal**: mask the glyph by its own colour so the matcher stops correlating to grey | Hue-consistent masking (`_HUE_TOL=14`) before templating | Prerequisite for 3 |
+| 3. Try shape options empirically (**NCC** / match the actual patch, not a binary mask) | `cv2.matchTemplate` TM_CCOEFF_NORMED on intensity templates, ablated against binary-mask cosine | **NCC won**; final D 55→**76%**, A 56→**83%** |
+
+**Ablation also removed something:** the `+0.35` shape-name boost *hurt* and was
+deleted. It was not assumed either way, it was measured.
+
+**Metric used (deliberately):** legend **self-recovery**: degrade each legend
+glyph to aerial scale, run it back through the matcher, check it recovers its own
+class. This is ungameable and needs no labels. Post-`select_by_count` count-recall
+was explicitly *not* used, because that step forces the counts to match.
+
+**Real-aerial total count error** Σ|legend − assigned| also fell on all four study
+images: A 929→866, B 819→351, C 1073→979, D 243→149.
+
+### Honest-metrics correction made during this work
+
+Two reporting errors were caught and fixed rather than shipped:
+
+1. **A capped-recall metric rewarded over-assignment.** It made image A look like
+   it regressed 77→58%; on the symmetric total-error metric A had actually
+   improved. Capped recall was dropped.
+2. **The trust caveat in the figures was backwards.** The docs said "B/C legend
+   counts are OCR-noisy, A/D are reliable". Measured legend coverage vs true
+   count is the reverse: **D 92%, B 84%, C 60%, A 33%**. So A's −7% "improvement"
+   largely reflects converging to an *incomplete* legend, which on A can mean
+   moving away from truth. **D is the trustworthy image; A is directional only.**
+   Also, A's error is dominated by a single class: WHIB contributes +293 by
+   itself (legend 1, assigned 294): so the open bug sits *inside* the improved
+   number.
+
+### Bug fixed: dots detected inside the dialog
+
+`_dot_centers` applied the `exclude` box only to component centroids, so
+cluster-split sub-dots near the dialog edge escaped it. Image A had **54 dots
+detected inside the dialog**; now 0 (total 1726→1672). Fixed by re-applying the
+exclude filter after splitting.
+
+---
+
+## External input: The Water Institute (GitHub discussion #6, ~2026-07-17)
+
+@cronosnull shared their parallel work on the same imagery. Three points:
+
+1. **LAB colour space**: they reached the same conclusion independently. External
+   validation of ask #1 above.
+2. **Use the clean high-resolution originals.** Every annotated screenshot has a
+   corresponding un-annotated original. Align with SIFT + homography and
+   **subtract**: annotations come from image *difference*, not colour thresholds.
+   This generalises across years where colour thresholds overfit.
+3. Alignment also yields a free mask for title bars and scroll bars.
+
+Point 2 reframed the hardest stage and became the current work. Important limit,
+stated up front: **subtraction answers *where* annotations are, not *which class***
+, the legend marker→class matching is still required. It feeds that work, it does
+not replace it.
+
+---
+
+## Data layout discovery (2026-07-20)
+
+The bucket `twi-aviandata.s3.amazonaws.com` is public and needs no auth. It has
+three top-level prefixes, and **only one of them is usable**:
+
+- `DottedImages/` and `HighResolutionImages/` are raw dumps whose naming schemes do
+  not correspond (`7May10DLJ1Area1.JPG` by observer/area vs
+  `10 June 2010 Camera 1 Card 1 001.JPG` by date/camera/card). **No pairing is
+  possible from these filenames.** Do not build on them.
+- **`avian_monitoring/` is curated**, organised by year / region / colony:
+  - `avian_monitoring/screenshots/<year>/<region>/<colony>/<name>.jpg`
+  - `avian_monitoring/high_resolution_photos/<year>/<region>/<colony>/<name>.jpg`
+  - `avian_monitoring/dotting_information/`: the survey data
+
+**Key fact:** a screenshot and its clean original sit at the **identical relative
+path** under the two prefixes. Pairing is a plain string swap. Verified by HTTP 206
+on both. Example pair: screenshot 809×1177, original 3168×4752, so the aerial
+region is the whole original downscaled ~4x, not a zoomed crop.
+
+`processed_data/avianData20102021.csv.gz` covers **18,304 unique screenshots**
+(exactly the corpus) with **100% having a paired high-res path**, per species and
+per dot-category, via columns `screenshot_new` / `HighResImage_new`.
+
+---
+
+## ⚠️ Ground Truth Correction: the most important finding (2026-07-20)
+
+**Every detection accuracy number in this document dated before 2026-07-20 was
+measured against the wrong quantity.**
+
+The question "how many dots are on this image?" had never been verified, it was
+assumed. It was settled by reading the counting tool's **own "Total Count" field**,
+which is baked into every dialog, off four screenshots **by eye** (count-OCR is
+only ~60–65% reliable, so it could not be trusted for this), and comparing:
+
+| screenshot | dialog Total Count | `category_sum` | `total_birds` |
+|---|---|---|---|
+| 30May12Camera1-Card1-0837 | 18 | 18 | 18 |
+| 12June10Camera1-Card1-0007 | 43 | 44 | 38 |
+| 17June13Camera1-Card1-0048 | 18 | 18 | **6** |
+| 17June13Camera1-Card1-0051 | 74 | 74 | **32** |
+
+Mean |error| vs the tool's own tally: **`category_sum` 0.25**, `total_birds` 14.75.
+
+**Conclusion: the dot-count ground truth is `category_sum`**: the sum of the
+per-dot-type columns. **`total_birds` is an ecological metric that excludes
+chicks**, and undercounts dots by up to 57% on a single image.
+
+**A real bug this exposed:** there are **four** chick-like columns, 
+`ChickNestwithoutAdult`, `Chicks/Nestlings`, **`ChicksNestlings`**, `ChickNest`.
+`ChicksNestlings` and `Chicks/Nestlings` are distinct and both carry data. Omitting
+`ChicksNestlings` made one image read 11 dots when the dialog says 18.
+
+Dialog row labels map to columns as: `site`→Site, `bird`/`adult`/`AD`→
+OtherAdultsInColony, `chick`/`YY`→ChicksNestlings, `cnwoa`→ChickNestwithoutAdult,
+`brood`→Brood, `WBN`→WBN.
+
+**Consequences, what this invalidates:**
+- The four study images' "true" counts (636 / 1407 / 117 / 115) were
+  `total_birds`-like and **could not be mapped back to specific survey rows at
+  all**. Among Gaillard-2011 images with `total_birds`≈117 the actual dot count
+  ranges **116 to 808**.
+- So the headline "image B over-detects 10.8x" may really be **~1.6x**. Detection
+  was likely never as bad as reported.
+- The benchmark was therefore rebuilt from identifiable images (below), and the
+  four unsourced fixtures retired as a scoring basis.
+
+Corpus-wide, `category_sum` and `total_birds` agree on ~72% of screenshots (median
+ratio 1.00) but dots exceed `total_birds` on **28.1%**, by up to 7x.
+
+---
+
+## Difference-Based Detection (2026-07-20): current work
+
+### Benchmark rebuilt
+
+Four images was how the colour thresholds got overfitted in the first place. The
+benchmark is now **63 stratified pairs**: 7 survey years × 3 density bands
+(sparse / medium / dense) × 3 images, spanning **40 colonies and 16 regions**, dot
+counts 7–2037. The dense tail is sampled on equal footing with the common case
+because that is where detection is weakest.
+
+Built by `scripts/build_manifest.py` → `scripts/build_benchmark.py`. Images cache
+to `data/fixtures/pairs/` (gitignored, ~470 MB; regenerate any time).
+
+### `src/align.py`: registration, with a mandatory quality gate
+
+SIFT + Lowe ratio + RANSAC, original downscaled to 1600px. Returns `ok=False`
+rather than a transform it cannot vouch for, at 18k images a silent bad warp is
+far worse than a refusal, because it would mark the whole frame as annotation.
+
+| metric | value |
+|---|---|
+| success | **96.7%** (58/60) |
+| reprojection error | median **0.38px**, max 0.88px |
+| inlier fraction | median **99%** |
+| model chosen | `similarity` 56/58 |
+| per year | 2010/13/15/18/21 = 100%; 2011 86%; 2012 88% |
+| dense band | 95% |
+
+The transform is pure scale + translation (perspective terms ≈ 0), so a
+**similarity** model is preferred when it fits as well as a homography, fewer
+degrees of freedom, more stable on low-feature scenes like open water.
+
+### `src/subtract.py`: annotations as image difference
+
+**Result so far (detected / true dots, 1.0 = perfect):**
+
+| band | OLD (colour) | NEW (subtraction) |
+|---|---|---|
+| dense | 3.56x | **1.01x** |
+| medium | 9.15x | **1.42x** |
+| sparse | 63.51x | **6.07x** |
+| **median overall** | **8.40x** | **1.46x** |
+| median \|log2 ratio\| (symmetric) | 3.07 | **0.73** |
+
+Detection is **not** scored with `select_by_count` or any per-class top-N, 
+selecting toward a known count makes the count match by construction.
+
+### Four traps found while building it: each cost an iteration
+
+Recorded because each looked correct and was not:
+
+1. **Plain `absdiff` fires on every edge.** Sub-pixel misregistration means an
+   aerial full of birds on sand reads as annotation everywhere. Fixed by comparing
+   each pixel against the best match within a small radius: real ink differs at
+   *every* offset, a shifted edge matches at *some* offset. Visually confirmed, 
+   birds stopped being counted as dots.
+2. **Water dominates false ink on sparse frames.** Ripples and glint genuinely
+   differ between the two renders and, being textureless, the shift search cannot
+   cancel them. Those differences are **luminance**; ink is **chromatic**.
+   Down-weighting L cut spurious ink **8.58% → 0.87%** on one coastal frame.
+3. **…but chrome must be found on the FULL difference, not the chroma one.** A flat
+   grey dialog over a sandy scene has almost no chromatic contrast; judged on
+   chroma it goes unmasked and every glyph inside it is counted as a marker. Both
+   differences are now computed in a single pass.
+4. **Never mask a large region as chrome on size alone.** A dense colony fuses into
+   one carpet spanning ~1/8 of the frame; masking it discarded **92% of the ink**
+   on a 2037-marker image. Bounding-box fill also failed, it rescued that image
+   but broke dialog masking elsewhere (sparse went 0.98x → 9.85x). **Saturation**
+   separates them: measured medians **dialog 1, open water ~26, marker carpet
+   70–74**.
+
+**Plus a fifth, in sizing:** estimate single-marker area from the **distance
+transform**, never from median blob area. When markers are all fused the median
+blob *is* a run, so no split ever triggers and the frame reports one dot.
+
+### What did NOT work
+
+| Attempt | Result | Why |
+|---|---|---|
+| Percentile threshold on the difference | Forced ~1% of pixels through regardless of content | A sparse frame has far less than 1% ink; replaced with median + k·MAD |
+| Modal-blob-size filter to drop text/lines | Collapsed on a noisy image (modal area → 6) | Noise blobs outnumbered markers *before* any colour gate ran |
+| Legend-palette colour reject to remove red text/lines | Only 105 → 79 blobs, and **the legend failed to parse on the test image** | Couples detection to legend parsing, which itself fails on ~12% |
+| Bounding-box fill to identify chrome | Fixed dense, broke sparse (0.98x → 9.85x) | Fill does not separate dialog from marker carpet; saturation does |
+
+**Still unresolved:** sparse/coastal frames over-detect **6.07x**. Remaining false
+ink there is genuine *annotation* that is not a dot, red site-label text and
+transect lines, plus residual water. The principled filter is the image's own
+legend palette (text/lines are off-palette), but that is coupled to legend parsing
+and is Phase-3 work.
+
+### Tooling notes
+
+- `scripts/eval_detection.py` caches alignments in `data/cache/align_cache.json`;
+  a full sweep is ~8 minutes uncached, seconds cached. **Delete the cache after
+  editing `src/align.py`.**
+- **Colab does not help**: the bottleneck is SIFT, which is CPU-bound in OpenCV;
+  a T4 would sit idle.
+- 20 new tests use **synthetic** pairs, so CI needs no network or S3 fixtures.
+
+---
+
+## Sparse Over-Detection Fix: saturation floor (2026-07-24)
+
+The one band still failing the detection gate was **sparse**. Diagnosed it
+spatially first (`scripts/diagnose_sparse.py`, overlays in `results/sparse_probe/`)
+rather than tuning blind. The false ink on sparse frames is **not** primarily red
+text/lines as previously assumed, it is **low-saturation residual** (water glint,
+mudflat texture, and the grey panel behind a label). On a near-empty frame this
+noise **outnumbers** the real markers and *poisons the size estimate*: the
+distance-transform modal radius collapses to its floor → the size band widens →
+the direct-keep and the splitter both flood.
+
+### Fix: a single legend-free gate
+Annotation ink is chromatic by construction; water/sand/grey UI is not. In
+`subtract.dot_candidates`, compute each ink blob's **median screenshot saturation**
+and drop it below `marker_sat_min` (config, =50) **before** `_marker_area` and the
+splitter, so noise can neither set the modal size nor be split into phantom dots.
+Measured medians that place the floor: marker carpet 70-74, clean sparse markers
+169, background residual 7-40. Needs no legend, so it cannot fail when legend
+parsing does (unlike the palette-reject in the *What did NOT work* table).
+
+**Code:** `SubtractResult` gained a `saturation` field (computed once in
+`extract_annotations`); the gate lives in `dot_candidates`; `config.yaml` →
+`subtract.marker_sat_min: 50`; `scripts/eval_detection.py` gained miss/zero/over
+counts (the |log2| median silently drops zero-detection frames, so a lever that
+pushes a frame to 0 could otherwise hide as an improvement); one red test in
+`tests/test_subtract.py` exercises the *drop* path (prior tests were all saturated
+magenta = keep-path only). **164 tests pass.**
+
+### Result (63-pair benchmark, vs `category_sum`)
+
+| Metric | Before (this session) | After |
+|---|---|---|
+| sparse band | 2.96x | **2.13x** |
+| medium band | 1.59x | **1.24x** |
+| dense band (not broken) | 1.10x | 1.15x |
+| overall median | 1.33x | **1.24x** |
+| overall mean | 3.07x | **2.08x** |
+| symmetric median \|log2\| | 0.76 | **0.53** |
+| zero-detection frames | 2 | **1** |
+
+One clean lever improved every band; dense verified safe per-image (only the
+00097 artifact below moved sharply, and that is correct).
+
+### Finding: the benchmark ground truth itself needs auditing
+One "dense" frame looked like a catastrophic regression (450 → 9). Spatial check
+(not count) explained it: **`16May15…00097` is a "No photo coverage for this area"
+frame**: only survey-area polygons + labels, **zero dots on the image**. Its
+`category_sum` of 450 is the **estimate written in the info-box text** (250 WHIB +
+50 broods + 45 GREG + …). The old colour path scored 288 by counting polygon
+lines; the saturation floor correctly returns ≈0. So this is a **ground-truth
+artifact, not a regression**: excluding it, dense mean is 1.19x. No-coverage
+frames with coloured labels *over*-detect, so more may hide in the over-detect
+list (spot-check worth doing; not a full re-audit). Reinforces the ground rule:
+**verify spatially, never by count alone.**
+
+### The sparse residual is TWO causes, not one
+Ruled out depth / peak-count / elongation as text discriminators (bold red label
+text is deep and compact, so geometry cannot separate it from markers). The
+remaining ~2.13x splits into:
+- **Vegetation/tree texture** (e.g. 0076, 14x, a mangrove colony with 9 real
+  dots): the Phase-3 legend-palette colour filter *will* help (foliage isn't
+  marker-coloured).
+- **Marker-red label text + transect lines** (0215, 03211): same red as the
+  markers, so colour cannot separate it. A **standing limitation** on a handful of
+  frames, not something Phase-3 closes. Stated honestly.
+
+**Mentor deliverable** *(local)*: a self-contained visual report covering both
+stages, real before/after detections, charts and code locations, sent to the mentor
+directly rather than checked in.
+
+## Wiring, honest measurement, and docs (2026-07-27 → 2026-08-04)
+
+**1. Detection wired into classification.** `classify.detect_dots_subtract` takes
+positions from `subtract.dot_candidates` and reads colour/shape at each one with the
+same code the colour path uses, so `assign_classes` sees identical input either way.
+Falls back to `detect_dots` when alignment refuses. Two tests lock this: count parity
+with `dot_candidates` (stops an unmeasured colour filter creeping into detection) and
+the fallback path. Commit `5213507`.
+
+**2. Fixed vs derived templates: Josh's question, answered locally.** Measured the
+shape-naming ceiling: only **29/63 legend rows (46%)** are named correctly by both the
+contour heuristic and NCC-against-ideal-glyphs, and 15 further rows are squares that
+no ideal glyph represents. A fixed template library requires naming the shape first,
+so it inherits that 46% ceiling; derived templates skip naming entirely. **Conclusion:
+stay derived.** Script `scripts/eval_shape_naming.py` is gitignored (local eval only),
+the number goes to Josh by message.
+
+**3. The stale-figure mistake.** The classification figure on the PR was a recompress
+of `fig14_template_match_samples_D.png` dated 1 July, but the matching rework landed
+10–20 July. Josh reviewed pre-rework behaviour and commented that the bottom three rows
+were still wrong. Root cause: `make_report_figures.py` resized an old PNG instead of
+running the pipeline. Fixed by `scripts/make_classify_figure.py`, which runs the live
+path every time and prints the detection mode into the title. Same fix later applied to
+`scripts/make_legend_figure.py`. **Rule: every figure ships from a generator that runs
+the live path.**
+
+**4. Classification measured honestly, on 41 frames not 4.** Ran previous vs current
+matching over all cached frames whose legend yields ≥2 classes, detection held constant,
+using the env toggles in `classify.py`
+(`COLOR_ANCHOR=0 BG_REMOVAL=0 SHAPE_MATCH=cosine SHAPE_BOOST=1` = previous config).
+
+| Band | Previous | Current |
+|---|---|---|
+| sparse (7) | 0.223 | **0.485** |
+| medium (15) | 0.273 | **0.352** |
+| dense (13) | 0.266 | **0.382** |
+| **mean** | **0.263** | **0.357** |
+| median | 0.250 | 0.339 |
+
+27 frames up, 14 down. Per-frame CSVs in `results/classify_ab/`.
+
+**5. Self-recovery overstates real performance.** `eval_matching.py` reports 76–83%,
+but it degrades a legend glyph and checks it recovers its own class, so template and
+test glyph come from the same pixels. On real aerial dots the same method scores 0.36.
+Both numbers now appear together in the PR and the README. Named failure: WHIB site
+(232 expected) and WHIB bird (86) both parse as `circle`, scoring 0.548 vs 0.540 on the
+same dot; the pipeline produced group sizes 89/254, so the split is roughly right and
+the **labels are swapped**. `select_by_count` caps sizes without reassigning, so it does
+not fix this.
+
+**6. Public docs rewritten (2026-08-04).** README.md described the superseded pipeline:
+70.8% detection measured against `total_birds`, CSV drawn as a pipeline *input* in the
+mermaid diagram, OCR listed under "what didn't work". All corrected. The old numbers are
+kept but scoped to a clearly-labelled *earlier prototype* section stating what they were
+measured on and against. `docs/learnings.md` gained items 20–30 (ground-truth column,
+63-pair benchmark, per-image marker mapping, why the OCR verdict was wrong, refuse-don't-guess
+registration, self-recovery circularity, counts cannot detect swapped labels).
+
+**Repo-hygiene finding:** commit `02ec833` had deleted `docs/learnings.md` and
+`docs/training_analysis.md` from the branch while README linked to them 7 times, so
+merging PR #7 would have removed both from `main` and left dead links. Both restored and
+un-ignored, along with this report. The remaining working notes (`TASKS.md`,
+`legend_findings.md`, `scale_validation.md`, `legend_groundtruth.md`, the mentor-facing
+HTML report, and all `.docx`/`.pdf` drafts) stay gitignored, since they are drafts and
+scratch measurements rather than a record worth publishing.
+
+## Next Steps
+
+### Done (2026-06-29) ✅
+- ~~Retune legend parser for full resolution~~ → scale-adaptive, rows within ±1 on all 4
+- ~~Robust dialog localization~~ → `locate_dialog` box-based, 14/14 (100%)
+- ~~Template matching per class~~ → `classify.assign_classes`
+- ~~Re-run detection with separate classes~~ → same-colour classes separated
+- ~~PR/plot explanation + synthetic fake-dots figure~~ → `results/figures/` + meeting doc
+
+### Done (2026-06-30) ✅
+- ~~Aerial shape / count-prior~~ → A +35 pp, C +49 pp; D flat; 146 tests passing
+- ~~Count-OCR strip clip (145 px)~~ → confirmed working for img_02 (224 px), img_03 (151 px); does NOT apply to B (B strips are 110 px, B's count-OCR problem is blank cells, not strip position)
+
+### Done (2026-07-10) ✅: matching rework
+- ~~Anchor colour to the dialog's own palette~~ → Lab, per image, with reject
+- ~~Background removal~~ → hue-consistent glyph masking
+- ~~Try shape options empirically~~ → NCC won the ablation; shape-name boost removed
+- ~~Separability~~ → within-colour D 55→**76%**, A 56→**83%**
+- ~~Dots detected inside the dialog~~ → exclude re-applied after cluster splitting
+
+### Done (2026-07-20) ✅: ground truth + difference-based detection
+- ~~Establish what a survey count means~~ → **`category_sum`**, verified against the
+  tool's own Total Count; `total_birds` retired as ground truth
+- ~~Rebuild the benchmark from identifiable images~~ → 63 stratified pairs
+- ~~Alignment~~ → `src/align.py`, **96.7%**, 0.38px, refuses rather than mis-warps
+- ~~Difference-based detection~~ → `src/subtract.py`, **8.40x → 1.46x** median error
+
+### Immediate (next): close the detection gate, then commit
+
+**The branch is uncommitted on purpose.** The agreed bar is that detection must be
+satisfactory first. Overall is now **1.24x** median; the last soft spot is
+**sparse (2.13x)**, addressed in part by the 2026-07-24 saturation floor.
+
+1. **Sparse over-detection (2.13x, down from 2.96x).** The dominant low-saturation
+   residual (water/mudflat/grey label panel) is now gated by the saturation floor.
+   The remaining residual is **two distinct things**:
+   a. **Vegetation/tree texture**: the **legend palette** as a colour reject *will*
+      help here (foliage is off-palette). Belongs in the Phase-3 `classify.detect_dots`
+      integration with a fallback path, NOT a hard dependency in `subtract`.
+      Note: legend palette CANNOT help the red-text case (label-red = marker-red).
+   b. **Marker-red label text + transect lines**: a standing limitation on a few
+      frames. Depth / peak-count / elongation were all ruled out (bold text is deep
+      and compact). Do not chase a geometric hack that risks the dense band.
+2. **Spatial verification, not just counts.** 18≈18 can happen for the wrong
+   reasons. Render overlays for a handful per band and confirm circles sit on real
+   markers. (Done ad hoc so far; make it a script.)
+3. **Wire subtraction into `classify.detect_dots`** as the primary path with the
+   colour path as fallback when alignment fails, currently they are separate.
+4. **Then commit** and update PR #3 / open a follow-up PR.
+
+### Superseded: the "fix B" plan (2026-07-01)
+The plan below was written when B's apparent 10.8x over-detection looked like the
+priority. That figure was measured against `total_birds` and is unreliable. B's
+true dot count may be up to 808, not 117. **Do not act on this section without
+re-measuring against `category_sum` first.** The B-specific reasoning is retained
+because the dialog-cropping root cause it uncovered was real and is fixed.
+
+1. **Fix A, Total Count header fallback** (`src/legend.py` → `attach_class_names`):
+   when all per-row counts are None/0, read the "Total Count: NNN" text from the
+   dialog's left-panel header via Tesseract. Use NNN as a total cap for
+   `select_by_count`. This is the highest-impact fix for B (17 of B's 1278 dots
+   are kept with correct count-cap vs 1278 with no cap now).
+
+2. **Fix B, Tighten blank-cell heuristic** (`src/legend.py` → `_ocr_count`):
+   `dark < 6` threshold is too loose for cells adjacent to table borders.
+   Raise to `dark < 15` or add a contrast check so empty cells reliably return
+   None/0 instead of misread integers. Eliminates the "site=444" phantom count
+   that inflates the denominator from 117 to 449.
+
+3. **Re-verify B count-OCR improvement**: the "57%→79%" claim from 2026-06-30
+   needs re-examination. B strips are 110 px (clip never fires). Possible the
+   improvement was measurement noise or came from a different change; needs a
+   fresh baseline measurement after Fix B above.
+
+4. **Per-class validation vs CSV at scale**: once B is fixed, validate A/C/D/B
+   recall against CSV ground truth at class level.
+
+5. **Wire recovered dots into DeepForest export** (train/test split by colony).
+
+### Follow-up (after cleanup)
+5. Convolutional template matching refinement after color segmentation
+6. Improve SIFT success rate from 57%, tune parameters or try SuperGlue
+7. SAM 3 to refine dot positions → tighter bounding boxes → better training signal
+8. Refactor `validate.py`, `map_coords.py`, `export.py`, `pipeline.py` into tested modules
+9. Full pipeline run on all 18,304 images → ~340,000 recovered annotations
+
+---
+
+## Open Questions / Blockers
+
+### Current (2026-07-20)
+
+- **Sparse frames over-detect 6.07x**: the one thing blocking the detection gate
+  and therefore the commit. Cause is understood (label text, transect lines,
+  residual water are all genuine *ink* but not dots); the principled filter is the
+  legend palette, which is coupled to legend parsing.
+- **Legend parsing is less reliable than reported.** `locate_dialog` returned a box
+  on 19/21 sampled screenshots (90%), but at least one was a clear false positive
+  (a 903×605 box at x=0 yielding 31 rows), and it failed on 3/8 in a second sample
+, including an image whose dialog is plainly visible. The 90% figure counts
+  false positives as successes and should not be quoted as accuracy.
+- **Alignment fails on ~3%** (2/60), concentrated in 2011/2012 and Barataria Bay.
+  Those fall back to colour detection. Root cause not yet investigated.
+- **Ground truth is counts, not locations.** The survey gives per-class counts per
+  photo, never dot coordinates. Count accuracy is measurable at scale; **per-dot
+  localisation accuracy is not**, without hand labels on a small subset. Nothing
+  currently verifies that a correct count is correct for the right reasons beyond
+  ad-hoc visual checks.
+- **Classification is untouched by this work.** Subtraction improves *where* dots
+  are; *which class* still runs through `classify.py` and still needs the legend.
+
+### Earlier (pre-2026-07-20, some now superseded)
+
+- **Dialog legend parsing robustness**: icons are small and may vary across annotators/years; scale-adaptive parser tested on 14 images (100% localization), but full S3 diversity not yet covered.
+- **Shape vs color ambiguity**: ~~need to confirm from sample~~ RESOLVED: (shape+color) → class confirmed per-image via parse_legend; count-prior handles "unknown" shapes at w=0.9.
+- **SIFT failure on 43% of images**: root cause not fully understood; may be featureless aerial sections.
+- **B, blank Count column (root cause, diagnosed 2026-07-01)**: B's annotator did not fill in per-row species counts. All 16 count cells are blank. OCR correctly returns None for blank cells (mostly), but the `dark < 6` heuristic misreads the "site" row as count=444 due to table-border dark pixels. The "Total Count: 117" header IS present and readable but not currently used by the pipeline. Two fixes needed: (1) read "Total Count" header as fallback; (2) tighten blank-cell heuristic. The detection itself is fine, red (244, quality 0.54) and blue (246, quality 0.51) are almost certainly real BRPE and LAGU birds.
+- **B, 145 px count-OCR clip does not help B**: B's strips are 110 px wide (below the 145 px threshold), so the clip never fires. The B "57%→79%" improvement claimed on 2026-06-30 needs re-verification after the blank-cell fix.
+- **Grey marker detection not implemented**: grey "site" squares have low HSV saturation (≈0 S channel) and cannot be detected by the colour-segmentation pipeline (sat > 80 threshold). If grey-square markers appear across other images, a separate low-saturation detection pass will be needed. For now, exclude grey classes from the recall denominator when counts are missing.
+- **Count-OCR on tiny digits**: img_08 and similar small-dialog images get Σcount=0; digit-recognition failure at ≤10 px, not a strip-position error. Possible fix: stronger upscale/sharpen or digit CNN. Lower priority than B's blank-cell fix.
+
+---
+
+## Meeting Log
+
+| Date | Key decision / outcome |
+|------|----------------------|
+| Pre-GSoC | Studied 25 images, 49K CSV rows before writing code |
+| Early GSoC | Abandoned OCR; switched to CSV as ground truth |
+| Early GSoC | Disabled text filter; widened HSV bins; measured from 1,199 dots |
+| Early GSoC | Found bfloat16 corruption; fixed with explicit autocast disable |
+| Early GSoC | SIFT-only training confirmed: position accuracy > data quantity |
+| ~2026-06-26 | Josh feedback Round 1: keep classes separate; PR explanation needed; give both numbers for comparisons |
+| ~2026-06-27 | Josh feedback Round 2: proportional category assignment is wrong |
+| ~2026-06-27 | **Agreed plan:** self-contained detector reads class map from dialog box per image; CSV for validation only |
+| 2026-06-29 | Built full auto pipeline: localization 14/14, species 15/15 (D), recall ~100% (cluster splitting), precision fix (B 1278→92). Fixed boundary bug (50% aerial cut). 5 figures + meeting doc prepared. |
+| 2026-06-30 | Opened **PR #3** for the legend module: added test suites (143 passing), fixed CI (UTF-16→UTF-8, added scipy), centralized legend config into `config.yaml` (behaviour-identical). Sent Josh a Slack update asking for review. |
+| 2026-06-30 | Incremental gap work while awaiting PR #3 review. Count-OCR: 145 px clip added (helps img_02/img_03, NOT B, whose strips are 110 px). Count-prior (w=0.9): A +35 pp, C +49 pp, D flat, attributable-dots metric on all 4 images. 3 new count-prior tests; 146 total passing. fig6+fig7 generated. GSoC meeting DOCX updated with 2026-07-01 section + quick-reference tables. |
+| 2026-07-01 | Deep diagnostic on image B. Found: (1) B's Count column is entirely blank, annotator never filled per-row counts; (2) "site=444" is an OCR misread of an empty cell via `dark < 6` heuristic picking up table borders; (3) B strips are 110 px, the 145 px clip does not fire; (4) quality distributions show red (244 dots, 0.54) and blue (246 dots, 0.51) are real BRPE/LAGU birds; green (495, 0.12) is vegetation FP. Total Count: 117 visible in dialog header but not read. Decision: fix B before moving to next pipeline module, real project, not prototype, needs to scale to 18k images. Two fixes planned: read Total Count header as fallback; tighten blank-cell heuristic in `_ocr_count`. |
+
+| 2026-07-10 | **Matching rework shipped.** Josh's 3 asks implemented: per-image Lab colour anchoring, background removal, NCC shape matching. Ablation chose NCC and **removed** the shape-name boost. Within-colour separability D 55→76%, A 56→83%; total count error down on all 4 images. Two reporting errors caught before shipping: capped-recall rewarded over-assignment (dropped), and the trust caveat was backwards (A's legend covers only 33% of true, D's 92%, D is the reliable image, not A). Fixed `_dot_centers` bug: 54 dots were being detected inside image A's dialog. |
+| ~2026-07-17 | **The Water Institute (@cronosnull) opened discussion #6.** Independently confirmed LAB; proposed aligning the clean high-res original and **subtracting** so annotations come from image difference, not colour thresholds. Reframed the detection stage. |
+| 2026-07-20 | **Ground truth corrected, the most consequential finding so far.** Read the counting tool's own "Total Count" field off four dialogs by eye: dot count is **`category_sum`**, not `total_birds` (mean error 0.25 vs 14.75). `total_birds` excludes chicks and undercounts by up to 57%. Found a real bug: 4 distinct chick-like columns, `ChicksNestlings` was being omitted. **This invalidates every pre-2026-07-20 accuracy figure** and the four study images' "true" counts, which could not be mapped to survey rows at all. Rebuilt the benchmark as 63 stratified pairs (7 years × 3 density bands, 40 colonies, 16 regions). |
+| 2026-07-20 | **Difference-based detection built.** `src/align.py` (96.7% success, 0.38px median error, refuses rather than mis-warping) and `src/subtract.py`. Detection error **8.40x → 1.46x** median; dense band **1.01x**; sparse still 6.07x. Four traps documented (edge diff, water=luminance, grey dialog needs the full diff, never mask a carpet by size) plus distance-transform sizing. 163 tests pass. **Branch deliberately left uncommitted** until detection is satisfactory. |
+| 2026-07-24 | **Sparse over-detection fixed, saturation floor.** Diagnosed spatially first: sparse false ink is low-saturation residual (water/mudflat/grey label panel) that poisons the modal-size estimate, not primarily red text. One legend-free gate in `subtract.dot_candidates` (drop blobs below `marker_sat_min=50` before sizing) improved every band: sparse **2.96→2.13x**, medium **1.59→1.24x**, overall median **1.33→1.24x**, mean **3.07→2.08x**; dense safe. 164 tests (added a drop-path red test + eval miss/zero/over hygiene). Found a **GT artifact** (00097 = "no photo coverage", truth 450 = text-box estimate, 0 dots on image). Residual sparse = two causes (vegetation texture → Phase-3 palette helps; marker-red label text → standing limitation). Built mentor report `docs/status_for_josh.html`. |
+
+---
+
+## Repo Map: what each file is for
+
+**Pipeline modules (`src/`)**
+
+| File | Role | State |
+|---|---|---|
+| `legend.py` | Find the dialog, parse legend rows → (marker, colour, shape, template, class name, count) | Working; localisation ~90% but with false positives |
+| `classify.py` | Assign aerial dots to legend classes: Lab colour anchoring → NCC shape within colour | Working; within-colour D 76% / A 83% |
+| `align.py` | **NEW**: register screenshot ↔ clean original (SIFT+RANSAC, quality gate) | 96.7%, 0.38px |
+| `subtract.py` | **NEW**: annotation ink as image difference; `dot_candidates` turns ink into dots | 1.46x median error; sparse weak |
+| `decompose.py` | Original screenshot splitter (Stage 1) | **Legacy**: superseded by `legend.locate_dialog`; only its own tests + legacy `run_legend.py` use it |
+| `detect.py` | Original colour detector (Stage 2), needs CSV counts | **Legacy**: not wired into anything live; only its own tests. The colour baseline/fallback in use is `classify.detect_dots`, not this |
+
+**Scripts (`scripts/`)**: none of these are imported by `src/`
+
+| File | Purpose |
+|---|---|
+| `build_manifest.py` | Survey CSV → `data/cache/manifest.csv` (ground truth, **evaluation only**) |
+| `build_benchmark.py` | Select + download the 63 stratified pairs |
+| `probe_groundtruth.py` | Phase-0 probe: subtraction vs published counts, writes overlays |
+| `probe_totalcount.py` | Phase-0 probe: crops dialogs so Total Count can be read by eye |
+| `eval_alignment.py` | Alignment success rate by year / band / region |
+| `eval_detection.py` | **The gate**: old colour vs new subtraction, vs `category_sum` |
+| `eval_matching.py` | Legend self-recovery confusion matrix (ungameable classification metric) |
+| `run_legend.py` | Batch legend parse over a folder |
+
+**Data (all gitignored, all regenerable)**
+
+- `data/cache/manifest.csv`: 49,204 rows, ground truth for 18,304 screenshots
+- `data/cache/benchmark.csv`: the 63 selected pairs
+- `data/cache/align_cache.json`: cached transforms; **delete after editing `align.py`**
+- `data/fixtures/pairs/`: downloaded screenshot/original pairs (~470 MB)
+
+---
+
+## How to Resume
+
+```bash
+# 1. Rebuild ground truth + benchmark (only if data/cache is empty)
+python scripts/build_manifest.py
+python scripts/build_benchmark.py --per-cell 3
+
+# 2. The gate: current numbers
+python scripts/eval_detection.py        # old vs new, vs category_sum
+python scripts/eval_alignment.py        # registration success rate
+
+# 3. Tests
+pytest tests/ -q                        # 163 passing
+```
+
+**Ground rules that must not be broken** (each was learned the hard way):
+1. The pipeline works from the **image alone**: the screenshot and its paired
+   clean original. Survey counts are **never** a pipeline input.
+2. The survey data is for **validation only**. Feeding it in and scoring against
+   it makes the score meaningless, this happened once already (count-prior).
+3. Ground truth for dot counts is **`category_sum`**, never `total_birds`.
+4. Verify **spatially**, not just by count. A matching count can be right for the
+   wrong reasons.
+5. Do not tune on the four old study images, that is how the colour thresholds
+   overfitted. Use the 63-pair stratified benchmark.
+
+---
+
+## Reference Docs
+
+> Entries marked *(local)* are working notes kept outside the repository. They are
+> listed so the reasoning can be traced, not because the file ships here.
+
+- **PR #3**: github.com/vickysharma-prog/Deepforest-bird-recovery-prototype/pull/3, legend module (code + tests + CI + figures); figures embedded in the description
+- *(local)* `docs/legend_findings.md`: legend pipeline: findings, results, open gaps (mentor-facing)
+- *(local)* `docs/legend_groundtruth.md`: hand-read legend tables (validation target) for 4 dialogs
+- *(local)* `docs/scale_validation.md`: full pipeline run on 14 images (localization 14/14)
+- *(local)* `docs/GSoC_meeting_2026-06-29.docx`: meeting document (problem, work, results, plan, code locations); **2026-07-01 section appended** (count-OCR fix, count-prior, fig6/fig7, tools/packages table, pipeline walkthrough, key numbers)
+- `results/figures/`: 7 result figures + README explaining each
+  - fig1–fig5: dialog localization, marker-class mapping, aerial classified, count barchart, synthetic color-vs-shape demo
+  - **fig6_count_prior_improvement.png**: before/after attributable recall grouped bar (4 images, A +35 pp, C +49 pp)
+  - **fig7_class_breakdown_4images.png**: per-class attributable counts 2×2 grid, all 4 images
+- `docs/learnings.md`: 21 documented findings from building the prototype
+- `docs/training_analysis.md`: 4 training experiments with root cause analysis
+- *(local)* `docs/project_documentation.pdf`: summary sent to mentor (this report's source)
+- `notebook/prototype_v1.ipynb`: full 23-section prototype (runs in Colab, T4 GPU, ~45 min)
+- `config.yaml`: all tunable parameters (HSV bins, morphology thresholds, boundary
+  constraints, plus the **new `align:` and `subtract:` sections**: each value there
+  carries the measurement that justifies it)
+- `results/eval_alignment.csv`: per-image registration outcome
+- `results/eval_detection.csv`: per-image old vs new detection vs `category_sum`
+- *(local)* `docs/matching_rework_FINAL_2026-07-10.docx`: visual report of the matching rework
+- **GitHub discussion #6**: The Water Institute's notes (LAB, subtraction, UI masking)

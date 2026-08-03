@@ -225,14 +225,17 @@ CLAUDE.md
 
 # Internal working notes — kept locally for our own evaluation/understanding,
 # not for the public repo. (Mentor-facing report is docs/status_for_josh.html.)
-docs/progress_report.md
+# docs/learnings.md and docs/training_analysis.md are NOT here on purpose: the
+# README links to both, so they ship with the repo.
 docs/legend_findings.md
 docs/scale_validation.md
 docs/legend_groundtruth.md
-docs/learnings.md
-docs/training_analysis.md
+docs/detection_methods.md
 docs/status_for_josh.html
 docs/TASKS.md
+docs/*.docx
+docs/*.pdf
+docs/~$*
 
 # Local-only eval: fixed-vs-derived template ceiling (results go to Josh by message)
 scripts/eval_shape_naming.py
