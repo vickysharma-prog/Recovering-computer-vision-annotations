@@ -51,6 +51,7 @@ ROOT = Path(__file__).parent.parent
 RESULTS = ROOT / "results"
 
 FIGURES = [
+    ("00_project_progress", RESULTS / "report_fig" / "fig_timeline.jpg"),
     ("01_what_changed", RESULTS / "report_fig" / "fig_improvement.jpg"),
     ("02_detection_before_after", RESULTS / "report_fig" / "fig_beforeafter.jpg"),
     ("03_dense_colony", RESULTS / "report_fig" / "fig_dense.jpg"),

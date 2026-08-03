@@ -27,6 +27,10 @@ The benchmark selects 63 pairs; 60 of them have both images cached locally and a
 
 Detection is close to finished. Classification works but is still weak, and that is the current focus.
 
+![project progress](results/report_fig/fig_timeline.jpg)
+
+Each point on the left is a measured change, not a re-tuning. Sparse frames were the worst case throughout: 63.51× over-detection under colour thresholds, 6.07× once the clean original was subtracted, 2.13× after the saturation floor. The dashed line on the right is what the same matching scores when it is tested against templates cut from its own pixels, which is why both numbers are reported.
+
 ![what changed](results/report_fig/fig_improvement.jpg)
 
 ## What the data looks like
