@@ -11,3 +11,7 @@ torch>=2.0.0
 torchvision>=0.15.0
 huggingface-hub>=0.20.0
 PyYAML>=6.0
+# Optional: publishes eval results to a Comet dashboard via
+# scripts/log_to_comet.py. Imported lazily, so the pipeline and the tests run
+# without it.
+comet_ml>=3.47.0

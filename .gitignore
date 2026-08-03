@@ -243,3 +243,8 @@ results/shape_naming/
 
 # Extra classification figures from picking a demo frame (only fig_classify.jpg ships)
 results/report_fig/fig_classify_*.jpg
+
+# Comet credentials, never commit an API key
+.comet.config
+comet.config
+.env
