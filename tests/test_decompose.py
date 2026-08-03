@@ -200,21 +200,29 @@ class TestBoundaryDetection:
         self, decomposer, with_dialog
     ):
         w = with_dialog.shape[1]
-        bx, _ = decomposer.find_dialog_boundary(with_dialog)
+        bx, _, _ = decomposer.find_dialog_boundary(with_dialog)
         assert w * 0.35 <= bx <= w * 0.70
 
     def test_dialog_minimum_width(
         self, decomposer, with_dialog
     ):
         w = with_dialog.shape[1]
-        bx, _ = decomposer.find_dialog_boundary(with_dialog)
+        bx, _, _ = decomposer.find_dialog_boundary(with_dialog)
         assert (w - bx) >= 80
 
     def test_confidence_in_range(
         self, decomposer, with_dialog
     ):
-        _, conf = decomposer.find_dialog_boundary(with_dialog)
+        _, conf, _ = decomposer.find_dialog_boundary(with_dialog)
         assert 0.3 <= conf <= 1.0
+
+    def test_candidates_returned(
+        self, decomposer, with_dialog
+    ):
+        """Raw grey/edge/variance candidates are exposed."""
+        _, _, cands = decomposer.find_dialog_boundary(with_dialog)
+        assert len(cands) == 3
+        assert all(isinstance(c, int) for c in cands)
 
 
 # ─────────────────────────────────────────────────
@@ -264,6 +272,19 @@ class TestDecompose:
             + result_with_dialog.dialog.shape[1]
         )
         assert total == 900
+
+    def test_boundary_candidates_present(
+        self, result_with_dialog
+    ):
+        """Dialog result includes raw boundary candidates."""
+        assert result_with_dialog.boundary_candidates is not None
+        assert len(result_with_dialog.boundary_candidates) == 3
+
+    def test_no_dialog_candidates_none(
+        self, result_no_dialog
+    ):
+        """No-dialog result has no boundary candidates."""
+        assert result_no_dialog.boundary_candidates is None
 
     def test_regions_same_height(
         self, result_with_dialog

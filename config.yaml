@@ -1,4 +1,4 @@
-# Configuration for screenshot decomposition
+# Configuration for bird annotation recovery pipeline
 
 decompose:
   # Grey pixel detection (R ≈ G ≈ B)
@@ -15,6 +15,8 @@ decompose:
   boundary_max: 0.70
   min_dialog_width_px: 80
   low_confidence: 0.3
+  confidence_spread_denom: 0.25
+  safe_boundary_min_pct: 0.45
 
   # Grey profile detection
   grey_profile_threshold: 0.25
@@ -37,3 +39,143 @@ decompose:
   taskbar_heights: [25, 35, 45]
   title_grey_threshold: 50.0
   taskbar_grey_threshold: 60.0
+
+detect:
+  # HSV color bins (measured from 1,199 candidate dots)
+  color_bins:
+    red:
+      h_ranges: [[0, 20], [160, 180]]
+      s_min: 80
+      v_min: 70
+    yellow:
+      h_ranges: [[16, 44]]
+      s_min: 80
+      v_min: 70
+    green:
+      h_ranges: [[36, 82]]
+      s_min: 80
+      v_min: 70
+    cyan:
+      h_ranges: [[78, 102]]
+      s_min: 80
+      v_min: 70
+    blue:
+      h_ranges: [[98, 138]]
+      s_min: 70
+      v_min: 70
+    magenta:
+      h_ranges: [[130, 170]]
+      s_min: 70
+      v_min: 70
+
+  # Morphology (measured from 25 study images)
+  min_comp_area: 8
+  min_circularity: 0.1
+  max_aspect_ratio: 3.0
+
+  # Vegetation adaptation
+  veg_h_lo: 30
+  veg_h_hi: 85
+  veg_s_lo: 20
+  veg_s_hi: 130
+  veg_v_lo: 30
+  veg_v_hi: 200
+  veg_boost_high: 40
+  veg_boost_mid: 25
+  veg_boost_low: 15
+  veg_boost_high_val: 70
+  veg_boost_mid_val: 50
+  veg_boost_low_val: 30
+
+  # Cluster splitting
+  min_split_filter_size: 5
+  split_dist_threshold: 1.5
+  split_area_ratio: 0.7
+
+  # Species matching
+  max_rel_diff: 10.0
+
+legend:
+  # Marker detection in the dialog legend (colored-glyph anchoring)
+  blob_sat_min: 90       # strict: anchor rows, avoid window-chrome colors
+  marker_sat_min: 70     # looser: read color inside an already-located cell
+  marker_val_min: 55
+  blob_area_min: 6        # min connected-component area (px) for a marker
+  blob_area_max: 700      # max colored-blob area in the screenshot scan
+  marker_band_pad: 5
+
+  # Row grid (Windows list-view rows are evenly pitched)
+  row_pitch_min: 6.0      # smallest valid row gap (px)
+  row_pitch_max: 60.0     # largest valid row gap (px)
+
+  # Shape classification of marker glyphs
+  fg_grey_delta: 28       # grey marker vs grey row background
+  fill_filled: 0.55       # bbox fill ratio above which a glyph is "filled"
+  square_extent: 0.6      # corner occupancy for square vs circle
+
+  # Glyph template extraction (markers upscaled so shape is analyzable)
+  glyph_upscale: 48       # upscale target px (z = round(target / cell_side))
+  template_size: 24
+
+# Registration of a screenshot against its clean high-resolution original
+# (src/align.py). Feeds difference-based annotation detection.
+align:
+  # Originals are ~4752px wide; SIFT at full size is slow and buys nothing,
+  # since the screenshot is far lower resolution regardless.
+  work_width: 1600
+  max_features: 8000
+  ratio_test: 0.75        # Lowe's ratio for descriptor matching
+  ransac_thresh: 5.0      # px, in work-scale units
+
+  # Quality gate. A silently bad warp is worse than a refusal: it would mark the
+  # whole frame as annotation. Failing here makes the caller fall back to
+  # colour-based detection instead.
+  min_matches: 12
+  min_inliers: 10
+  min_inlier_frac: 0.30
+  max_reproj_err: 3.0     # measured 0.73px on a good pair, so this is generous
+
+  # Below this the homography's perspective row is indistinguishable from zero,
+  # so the simpler similarity fit is used (real pairs are scale+translation).
+  perspective_eps: 1.0e-5
+
+# Difference-based annotation extraction (src/subtract.py).
+subtract:
+  # Compare each pixel against the best match within this radius instead of the
+  # exactly-aligned one. Without it, sub-pixel misregistration makes every
+  # high-contrast edge (birds on sand) read as annotation.
+  shift_radius: 2
+
+  # Weight on Lab's L channel when differencing. Water is the dominant source of
+  # false ink — ripples and glint really do differ between the two renders, and
+  # being textureless the shift search cannot cancel them. Those differences live
+  # in luminance; annotation ink is chromatic. Kept non-zero so grey markers stay
+  # visible. Measured: 8.58% -> 0.87% spurious ink on a coastal frame.
+  luminance_weight: 0.15
+
+  # Threshold = median + mad_k * MAD of the difference, floored at min_diff.
+  # A percentile would force a fixed fraction of pixels through regardless of
+  # how much ink is actually present.
+  mad_k: 8.0
+  min_diff: 14.0          # Lab units
+
+  # Window chrome and the dialog have no counterpart in the original. They are
+  # removed as large solid difference blocks rather than via the dialog locator,
+  # which has its own failure modes.
+  ui_area_frac: 0.004     # fraction of frame above which a blob may be chrome
+  # ...and its pixels must be duller than this. Size alone misfires badly: in a
+  # dense colony the markers merge into one carpet spanning an eighth of the
+  # frame, which was discarded as chrome, throwing away 92% of the annotations on
+  # a 2037-dot image. Measured median saturation separates them cleanly —
+  # dialog 1, open water ~26, marker carpet 70-74.
+  ui_max_sat: 40
+  ui_dilate: 9
+  edge_margin: 2          # guard against shift wrap-around at the border
+
+  # Chroma gate for marker candidates (src/subtract.py -> dot_candidates). An ink
+  # blob whose median screenshot saturation is below this is treated as non-marker
+  # (water glint, mudflat texture, the grey label panel) and dropped BEFORE the
+  # modal-size estimate, which noise would otherwise collapse. Annotation ink is
+  # chromatic by construction. Measured: marker carpet 70-74, clean sparse markers
+  # 169, background residual 7-40 — the floor sits in that gap.
+  marker_sat_min: 50
