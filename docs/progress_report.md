@@ -4,7 +4,7 @@
 **Contributor:** Vicky Sharma
 **Mentor:** Josh Veitch-Michaelis
 **Repo:** github.com/vickysharma-prog/Recovering-computer-vision-annotations
-**Last updated:** 2026-08-04 (detection wired into classification; classification A/B on 41 frames; README + learnings rewritten for current state)
+**Last updated:** 2026-08-04 (PR #7 merged into `main`; detection wired into classification; classification A/B on 41 frames; README + learnings rewritten for current state)
 
 > **READ THIS FIRST: two earlier claims in this document have been retracted.**
 > They are left in place with correction notes rather than deleted, because the
@@ -20,10 +20,13 @@
 > Current state in one line: **detection is close to done and classification is the
 > weak half.** Alignment 96.7%, detection error 8.40x -> **1.24x** median, subtraction
 > now feeds the classifier directly (`detect_dots_subtract`), classification
-> agreement **0.26 -> 0.36** measured on 41 frames. All of it is on **PR #7**
-> (branch `feat/detection-pipeline`), CI green, **166 tests** pass. Remaining
+> agreement **0.26 -> 0.36** measured on 41 frames. All of it is **merged into `main`**
+> via PR #7 (which also superseded PR #3), CI green, **166 tests** pass. Remaining
 > weaknesses: sparse over-detection 2.13x, and classification, which cannot be
 > improved further without hand-labelled dots.
+>
+> Next work starts from `main`: shape naming, then ~100 hand-labelled aerial dots,
+> then the downstream stages (map, validate, export, train).
 
 ---
 
