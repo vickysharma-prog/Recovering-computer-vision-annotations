@@ -52,7 +52,7 @@ Every screenshot raises two separate questions, handled by different modules.
 flowchart TB
     subgraph IN["Inputs"]
         SS["Screenshot<br/>dots baked into pixels"]
-        OR["Clean original photograph"]
+        ORIG["Clean original photograph"]
     end
 
     subgraph L["legend.py: read the dialog"]
@@ -77,7 +77,7 @@ flowchart TB
 
     SS --> LOC
     SS --> SIFT
-    OR --> SIFT
+    ORIG --> SIFT
     SPLIT --> LAB
     OCR --> LAB
     NCC --> OUT["dot positions + class labels"]
