@@ -1,26 +1,34 @@
 """
-Publish the current pipeline results to a Comet ML project.
+Publish the pipeline's evaluation results to a Comet ML project.
 
-This project has no training loop: detection and classification are OpenCV, and
-the numbers come from evaluation runs rather than from epochs. So this logs one
-Comet experiment per evaluation, reading the CSVs the eval scripts already
-write. Nothing in src/ changes.
+This project has no training loop. Detection and classification are OpenCV, and
+the numbers come from evaluation runs rather than epochs, so the usual
+DeepForest pattern of handing a CometLogger to trainer.fit does not apply here.
 
-What each run records:
-  parameters : every value in config.yaml, flattened to section.key
-  metrics    : detection ratio per density band, alignment success and error,
-               classification agreement before and after the matching rework
-  assets     : the per-image eval CSVs, so a number can be traced to a frame
-  images     : the report figures
+Comet compares runs against each other, so each method gets its own experiment
+and they share metric names. That is what makes the dashboard readable: the old
+and new method appear as two lines on one chart and two rows in the comparison
+table, instead of one run holding a pile of unrelated scalars.
 
-Needs COMET_API_KEY in the environment. Without it the script explains how to
-set one and exits 0, so it never breaks a pipeline or CI run.
+Experiments written:
+    detection: colour thresholds   detection_ratio over 60 frames
+    detection: subtraction         detection_ratio over 60 frames
+    classification: previous       classification_agreement over 41 frames
+    classification: current        classification_agreement over 41 frames
+
+Each also carries the summary numbers (median, per density band) and all of
+config.yaml as parameters, so a config can be tied to a result. Figures and the
+source CSVs go on the detection: subtraction run, which is the current pipeline.
+
+Needs COMET_API_KEY or a gitignored .comet.config. Without credentials it
+explains how to set them and exits 0, so it can never break a pipeline or CI.
 
 Usage:
     python scripts/log_to_comet.py
-    python scripts/log_to_comet.py --project bird-annotation-recovery --dry-run
+    python scripts/log_to_comet.py --dry-run
+    python scripts/log_to_comet.py --clean     # archive earlier runs first
 
-Output: a run at comet.com/<workspace>/<project>
+Output: runs at comet.com/<workspace>/<project>
 """
 
 from __future__ import annotations
@@ -38,14 +46,16 @@ ROOT = Path(__file__).parent.parent
 RESULTS = ROOT / "results"
 
 FIGURES = [
-    ("fig_improvement", RESULTS / "report_fig" / "fig_improvement.jpg"),
-    ("fig_beforeafter", RESULTS / "report_fig" / "fig_beforeafter.jpg"),
-    ("fig_dense", RESULTS / "report_fig" / "fig_dense.jpg"),
-    ("fig_artifact", RESULTS / "report_fig" / "fig_artifact.jpg"),
-    ("fig_classify", RESULTS / "report_fig" / "fig_classify.jpg"),
-    ("fig1_localization", RESULTS / "figures" / "fig1_localization.png"),
-    ("fig2_marker_to_class", RESULTS / "figures" / "fig2_marker_to_class.png"),
+    ("01_what_changed", RESULTS / "report_fig" / "fig_improvement.jpg"),
+    ("02_detection_before_after", RESULTS / "report_fig" / "fig_beforeafter.jpg"),
+    ("03_dense_colony", RESULTS / "report_fig" / "fig_dense.jpg"),
+    ("04_ground_truth_artifact", RESULTS / "report_fig" / "fig_artifact.jpg"),
+    ("05_classification", RESULTS / "report_fig" / "fig_classify.jpg"),
+    ("06_dialog_localization", RESULTS / "figures" / "fig1_localization.png"),
+    ("07_marker_to_class", RESULTS / "figures" / "fig2_marker_to_class.png"),
 ]
+
+BAND_ORDER = {"sparse": 0, "medium": 1, "dense": 2, "?": 3}
 
 
 def _has_credentials() -> bool:
@@ -58,8 +68,8 @@ def _has_credentials() -> bool:
 
 
 def _flatten(d: dict, prefix: str = "") -> dict:
-    """config.yaml is two levels deep; Comet wants flat key/value pairs."""
-    out = {}
+    """config.yaml is nested; Comet wants flat key/value pairs."""
+    out: dict = {}
     for k, v in d.items():
         key = f"{prefix}{k}"
         if isinstance(v, dict):
@@ -71,82 +81,120 @@ def _flatten(d: dict, prefix: str = "") -> dict:
     return out
 
 
-def collect() -> tuple[dict, dict, list[Path]]:
-    """Read the eval outputs. Returns (params, metrics, assets)."""
-    params: dict = {}
-    metrics: dict = {}
-    assets: list[Path] = []
-
+def _params() -> dict:
     cfg = ROOT / "config.yaml"
-    if cfg.exists():
-        params.update(_flatten(yaml.safe_load(cfg.read_text(encoding="utf-8"))))
+    if not cfg.exists():
+        return {}
+    return _flatten(yaml.safe_load(cfg.read_text(encoding="utf-8")))
 
-    det = RESULTS / "eval_detection.csv"
-    if det.exists():
-        d = pd.read_csv(det)
-        assets.append(det)
-        metrics["detection/frames"] = len(d)
-        metrics["detection/old_ratio_median"] = float(d.old_ratio.median())
-        metrics["detection/new_ratio_median"] = float(d.new_ratio.median())
-        for band, g in d.groupby("band"):
-            metrics[f"detection/old_ratio_{band}"] = float(g.old_ratio.median())
-            metrics[f"detection/new_ratio_{band}"] = float(g.new_ratio.median())
-        # Symmetric error: |log2(ratio)| is 0 for a perfect count and treats
-        # over- and under-detection alike, unlike the raw ratio.
-        for col in ("old_ratio", "new_ratio"):
+
+def _alignment() -> dict:
+    """Alignment is a property of the run, not of a method, so it rides along."""
+    path = RESULTS / "eval_alignment.csv"
+    if not path.exists():
+        return {}
+    a = pd.read_csv(path)
+    out = {"alignment_success_rate": float(a.ok.mean()),
+           "alignment_frames": float(len(a))}
+    if a.ok.any():
+        out["alignment_reproj_px_median"] = float(a[a.ok].reproj.median())
+    return out
+
+
+def build_runs() -> list[dict]:
+    """One entry per experiment: name, tags, per-frame series, summary metrics."""
+    runs: list[dict] = []
+    align = _alignment()
+
+    det_path = RESULTS / "eval_detection.csv"
+    if det_path.exists():
+        d = pd.read_csv(det_path).copy()
+        d["_o"] = d.band.map(lambda b: BAND_ORDER.get(b, 9))
+        d = d.sort_values(["_o", "name"]).reset_index(drop=True)
+        for label, col, tag in (("colour thresholds", "old_ratio", "old"),
+                                ("subtraction", "new_ratio", "new")):
             r = d[col].replace(0, np.nan)
-            metrics[f"detection/symlog_{col}"] = float(np.abs(np.log2(r)).median())
+            summary = {
+                "detection_ratio_median": float(d[col].median()),
+                # |log2 ratio| is 0 for a perfect count and penalises
+                # under- and over-detection equally, unlike the raw ratio.
+                "detection_symlog_error": float(np.abs(np.log2(r)).median()),
+                "frames": float(len(d)),
+            }
+            for band, g in d.groupby("band"):
+                summary[f"detection_ratio_{band}"] = float(g[col].median())
+            summary.update(align)
+            runs.append({
+                "name": f"detection: {label}",
+                "tags": ["detection", tag],
+                "series": [("detection_ratio", d[col].tolist())],
+                "labels": d.name.tolist(),
+                "summary": summary,
+                "assets": [det_path, RESULTS / "eval_alignment.csv"],
+                "figures": tag == "new",
+            })
 
-    ali = RESULTS / "eval_alignment.csv"
-    if ali.exists():
-        a = pd.read_csv(ali)
-        assets.append(ali)
-        metrics["alignment/frames"] = len(a)
-        metrics["alignment/success_rate"] = float(a.ok.mean())
-        if a.ok.any():
-            metrics["alignment/reproj_px_median"] = float(a[a.ok].reproj.median())
-
-    ab_dir = RESULTS / "classify_ab"
-    old_f, new_f = ab_dir / "ab_old.csv", ab_dir / "ab_new.csv"
+    ab = RESULTS / "classify_ab"
+    old_f, new_f = ab / "ab_old.csv", ab / "ab_new.csv"
     if old_f.exists() and new_f.exists():
         old, new = pd.read_csv(old_f), pd.read_csv(new_f)
-        assets += [old_f, new_f]
-        metrics["classification/frames"] = len(new)
-        for tag, df in (("old", old), ("new", new)):
-            metrics[f"classification/{tag}_agreement_mean"] = float(df.agree.mean())
-            metrics[f"classification/{tag}_agreement_median"] = float(df.agree.median())
-            for band, g in df.groupby("band"):
-                if band == "?":       # frame is not in the 63-pair benchmark
-                    continue
-                metrics[f"classification/{tag}_agreement_{band}"] = float(g.agree.mean())
         merged = old.merge(new, on="name", suffixes=("_old", "_new"))
-        metrics["classification/frames_improved"] = int((merged.agree_new > merged.agree_old).sum())
-        metrics["classification/frames_worse"] = int((merged.agree_new < merged.agree_old).sum())
+        improved = int((merged.agree_new > merged.agree_old).sum())
+        worse = int((merged.agree_new < merged.agree_old).sum())
+        for label, df, tag in (("previous matching", old, "old"),
+                               ("current matching", new, "new")):
+            df = df.copy()
+            df["_o"] = df.band.map(lambda b: BAND_ORDER.get(b, 9))
+            df = df.sort_values(["_o", "name"]).reset_index(drop=True)
+            summary = {
+                "classification_agreement_mean": float(df.agree.mean()),
+                "classification_agreement_median": float(df.agree.median()),
+                "frames": float(len(df)),
+                "frames_improved_vs_previous": float(improved),
+                "frames_worse_vs_previous": float(worse),
+            }
+            for band, g in df.groupby("band"):
+                if band == "?":          # frame is not in the 63-pair benchmark
+                    continue
+                summary[f"classification_agreement_{band}"] = float(g.agree.mean())
+            runs.append({
+                "name": f"classification: {label}",
+                "tags": ["classification", tag],
+                "series": [("classification_agreement", df.agree.tolist())],
+                "labels": df.name.tolist(),
+                "summary": summary,
+                "assets": [old_f, new_f],
+                "figures": False,
+            })
 
-    return params, metrics, assets
+    return runs
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default="bird-annotation-recovery")
     ap.add_argument("--workspace", default=None)
-    ap.add_argument("--name", default=None, help="run name shown in the dashboard")
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would be logged and exit")
+    ap.add_argument("--clean", action="store_true",
+                    help="archive existing runs in the project first")
     args = ap.parse_args()
 
-    params, metrics, assets = collect()
-    if not metrics:
+    runs = build_runs()
+    if not runs:
         print("No eval results found. Run scripts/eval_detection.py and "
               "scripts/eval_alignment.py first.")
         return 1
 
+    params = _params()
     if args.dry_run:
-        print(f"{len(params)} parameters, {len(metrics)} metrics, "
-              f"{len(assets)} assets, "
-              f"{sum(1 for _, p in FIGURES if p.exists())} figures")
-        for k in sorted(metrics):
-            print(f"  {k:44s} {metrics[k]}")
+        print(f"{len(runs)} experiments, {len(params)} parameters each\n")
+        for r in runs:
+            pts = sum(len(v) for _, v in r["series"])
+            print(f"  {r['name']:38s} {pts:3d} points, "
+                  f"{len(r['summary'])} summary metrics")
+            for k in sorted(r["summary"]):
+                print(f"      {k:38s} {r['summary'][k]:.4f}")
         return 0
 
     if not _has_credentials():
@@ -165,32 +213,57 @@ def main() -> int:
         return 0
 
     from comet_ml import Experiment
-    # log_git_patch would upload every untracked file, which here means the
-    # local image fixtures: megabytes of data that add nothing to a run. The
-    # git metadata (commit, branch) is kept, since that is what ties a run to
-    # the code that produced it.
-    exp = Experiment(project_name=args.project, workspace=args.workspace,
-                     auto_metric_logging=False, auto_param_logging=False,
-                     log_git_patch=False)
-    if args.name:
-        exp.set_name(args.name)
 
-    exp.log_parameters(params)
-    exp.log_metrics(metrics)
-    for path in assets:
-        exp.log_asset(str(path), file_name=path.name)
-    for name, path in FIGURES:
-        if path.exists():
-            exp.log_image(str(path), name=name)
-    for doc in ("README.md", "docs/progress_report.md", "docs/learnings.md"):
-        p = ROOT / doc
-        if p.exists():
-            exp.log_asset(str(p), file_name=Path(doc).name)
+    if args.clean:
+        from comet_ml.api import API
+        api = API()
+        ws = args.workspace or api.get_default_workspace()
+        try:
+            existing = api.get(ws, args.project) or []
+        except Exception:
+            existing = []
+        for e in existing:
+            api.archive_experiment(e.id)
+        if existing:
+            print(f"archived {len(existing)} earlier run(s)")
 
-    exp.add_tags(["opencv", "no-training", "benchmark-63-pairs"])
-    exp.end()
-    print(f"logged {len(params)} parameters and {len(metrics)} metrics to "
-          f"project '{args.project}'")
+    for r in runs:
+        # log_git_patch would upload every untracked file, which here means the
+        # local image fixtures. Git metadata (commit, branch) is kept, since
+        # that is what ties a run to the code that produced it.
+        exp = Experiment(project_name=args.project, workspace=args.workspace,
+                         auto_metric_logging=False, auto_param_logging=False,
+                         log_git_patch=False)
+        exp.set_name(r["name"])
+        exp.add_tags(r["tags"] + ["opencv", "no-training", "benchmark-63-pairs"])
+        exp.log_parameters(params)
+
+        # Step is the frame index, ordered sparse then medium then dense, so
+        # the chart reads left to right as the images get more crowded.
+        for metric, values in r["series"]:
+            for i, v in enumerate(values):
+                if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                    exp.log_metric(metric, float(v), step=i)
+        exp.log_metrics(r["summary"])
+        exp.log_other("frame_order", "sparse, then medium, then dense")
+
+        for path in r["assets"]:
+            if path.exists():
+                exp.log_table(str(path))
+        if r["figures"]:
+            for name, path in FIGURES:
+                if path.exists():
+                    exp.log_image(str(path), name=name)
+            for doc in ("README.md", "docs/progress_report.md",
+                        "docs/learnings.md"):
+                p = ROOT / doc
+                if p.exists():
+                    exp.log_asset(str(p), file_name=Path(doc).name)
+        exp.end()
+        print(f"  logged {r['name']}")
+
+    print(f"\n{len(runs)} experiments in project '{args.project}'. "
+          f"Open the project, select all four, and use the comparison view.")
     return 0
 
 
