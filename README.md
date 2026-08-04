@@ -187,10 +187,13 @@ pip install pytest numpy opencv-python scikit-image PyYAML scipy   # tests only
 
 pytest tests/ -q                         # 166 passing
 
-python scripts/build_manifest.py && python scripts/build_benchmark.py --per-cell 3
+python scripts/build_manifest.py         # survey counts, ~1.4 MB
+python scripts/build_benchmark.py --per-cell 3   # the 63 pairs, ~472 MB
 python scripts/eval_detection.py         # old vs new vs category_sum
 python scripts/eval_alignment.py         # registration success rate
 ```
+
+The tests need no data and no network; the fixtures they use are in the repo. Everything below `pytest` downloads from a public bucket, so no credentials are involved, but the pairs are large because the clean originals are about 7 MB each. `build_benchmark.py --dry-run` prints the selection and the download size without fetching anything. Both scripts cache, so an interrupted run can be repeated.
 
 Class-name OCR needs the Tesseract binary, not just `pytesseract`. On Windows: `winget install UB-Mannheim.TesseractOCR`. The pipeline skips OCR and keeps parsing if Tesseract is missing.
 
