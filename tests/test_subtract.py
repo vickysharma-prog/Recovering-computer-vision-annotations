@@ -101,6 +101,27 @@ class TestUiMasking:
         assert carpet.mean() < 40, "dense marker carpet was masked as chrome"
         assert sub.mask[80:220, 80:270].any()
 
+    def test_keeps_a_scattered_colony(self):
+        """Regression: markers spread out, with background between them.
+
+        The tight grid above survives even a whole-region saturation test, because
+        its markers nearly touch. A *scattered* colony is the case that failed:
+        MORPH_CLOSE bridges the gaps into one region whose pixels are mostly the
+        background between markers, so a median over the region reads as dull and
+        the whole colony is discarded as chrome. On the hand-labelled frames that
+        deleted 92 of 345 real markers, 53 of them on a single frame. Chrome is now
+        judged on the region's ink instead, which stays saturated however much
+        background the closing pulls in.
+        """
+        dots = _grid(7, 5, x0=90, y0=90, step=55)
+        sub = _aligned(*_pair(dots=dots, seed=61))
+
+        for (x, y) in dots:
+            assert not sub.ui_mask[y - 4:y + 5, x - 4:x + 5].any(), \
+                f"marker at {x},{y} was masked as chrome"
+            assert sub.mask[y - 5:y + 6, x - 5:x + 6].any(), \
+                f"marker at {x},{y} lost its ink"
+
 
 # ─────────────────────────────────────────────────
 # DOT CANDIDATES

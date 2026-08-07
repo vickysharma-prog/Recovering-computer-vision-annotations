@@ -77,6 +77,13 @@ _UI_AREA_FRAC = _CONFIG.get("ui_area_frac", 0.004)
 # ...and its pixels must be duller than this to count as chrome. Measured median
 # saturation: dialog 1, open water ~26, marker carpet 70-74.
 _UI_MAX_SAT = _CONFIG.get("ui_max_sat", 40)
+# Chrome test, applied to a region's INK pixels rather than to the whole region.
+# `ui_ink_sat` is what counts as chromatic ink; a region is chrome when fewer than
+# `ui_max_ink_sat_frac` of its ink pixels reach it. Measured over the 21 candidate
+# regions on the six hand-labelled frames: regions containing real markers run
+# 10.9%-94.9%, the dialogs run 0.0%-2.5%, and nothing falls between.
+_UI_INK_SAT = _CONFIG.get("ui_ink_sat", 100)
+_UI_MAX_INK_SAT_FRAC = _CONFIG.get("ui_max_ink_sat_frac", 0.05)
 _UI_DILATE = _CONFIG.get("ui_dilate", 9)
 _EDGE_MARGIN = _CONFIG.get("edge_margin", 2)       # shift wrap-around guard
 # Minimum median saturation (HSV S, 0-255) of the screenshot under an ink blob for
@@ -178,10 +185,26 @@ def _ui_regions(binary: np.ndarray, saturation: np.ndarray) -> np.ndarray:
     stopped masking dialogs elsewhere, and sparse frames (few real dots, so the
     dialog dominates) went from 0.98x to 9.85x.
 
-    Saturation does separate them, and by a wide margin. Measured medians over
-    the components of one dense frame: dialog 1, marker carpet 70 and 74. Open
-    water — the other big false-difference source — sits around 26. So a
-    component is chrome when it is large AND its underlying pixels are dull.
+    Saturation separates them, but it has to be read off the region's INK, not off
+    the region. The earlier version took the median saturation over the whole
+    closed component, and that measured the wrong thing: `MORPH_CLOSE` bridges a
+    scattered colony into one region covering a quarter of the frame, whose median
+    is then dominated by the **background between** the markers. On the six
+    hand-labelled frames that deleted 92 of 345 real markers — 26.7%, and 53 of 71
+    on `14June21…238` alone, where the offending region spanned 25% of the frame
+    and its median saturation read 17 against a threshold of 40.
+
+    Judged on ink pixels the two separate cleanly. Measured over the 21 candidate
+    regions on those frames, as the fraction of ink at least `_UI_INK_SAT`
+    saturated: regions holding real markers run 10.9% to 94.9%, the dialogs run
+    0.0% to 2.5%, and nothing lands in between. A colony always has some chromatic
+    ink however much background the closing drags in with it; a flat grey dialog
+    has almost none.
+
+    Size still gates first, and the size rule must not be loosened to compensate
+    for anything: masking on size alone once discarded 92% of the ink on a
+    2037-marker frame, and bounding-box fill rescued that image while sending
+    sparse frames from 0.98x to 9.85x.
     """
     closed = cv2.morphologyEx(
         binary, cv2.MORPH_CLOSE,
@@ -193,7 +216,10 @@ def _ui_regions(binary: np.ndarray, saturation: np.ndarray) -> np.ndarray:
         if stats[i, cv2.CC_STAT_AREA] < _UI_AREA_FRAC * frame_area:
             continue
         region = labels == i
-        if float(np.median(saturation[region])) < _UI_MAX_SAT:
+        ink = region & (binary > 0)
+        if not ink.any():
+            continue
+        if float((saturation[ink] >= _UI_INK_SAT).mean()) < _UI_MAX_INK_SAT_FRAC:
             ui[region] = 255
     if ui.any():
         ui = cv2.dilate(ui, np.ones((_UI_DILATE, _UI_DILATE), np.uint8))
@@ -352,7 +378,19 @@ def dot_candidates(result: SubtractResult,
             sub = (labels[y0:y0 + h, x0:x0 + w] == i).astype(np.uint8)
             split = _split_cluster(sub, n_est)
             if len(split) > 1:
-                out.extend((x0 + lx, y0 + ly, w, h, int(area / len(split)))
+                # Each sub-dot carries its own footprint rather than the parent
+                # cluster's bounding box. Inheriting `w, h` described the whole
+                # run, so every later size or elongation test on a split piece was
+                # reading the parent instead of the marker.
+                #
+                # Gating the split on the modal size band as well was tried and is
+                # NOT here: it cost sparse recall 0.56 -> 0.10, because `modal` is
+                # itself the unreliable quantity (it reads a stroke half-width on
+                # outline glyphs), so a band built from it rejects valid splits on
+                # exactly the frames where the estimate has least support.
+                each = int(area / len(split))
+                side = max(1, int(round(np.sqrt(max(each, 1)))))
+                out.extend((x0 + lx, y0 + ly, side, side, each)
                            for (lx, ly) in split)
                 continue
         if elongation <= 2.0 and 0.35 * modal <= area <= 3.0 * modal:

@@ -168,7 +168,16 @@ subtract:
   # frame, which was discarded as chrome, throwing away 92% of the annotations on
   # a 2037-dot image. Measured median saturation separates them cleanly —
   # dialog 1, open water ~26, marker carpet 70-74.
-  ui_max_sat: 40
+  ui_max_sat: 40          # retained for reference; superseded by the ink test below
+  # Chrome is judged on a region's INK pixels, not the whole closed region. Taking
+  # the median over the region measured the background between scattered markers
+  # rather than the markers, and deleted 92 of 345 hand-labelled markers (26.7%),
+  # including 53 of 71 on 14June21...238 where the region spanned a quarter of the
+  # frame. Measured over the 21 candidate regions on the six labelled frames, as
+  # the fraction of ink at least ui_ink_sat saturated: regions holding real markers
+  # run 10.9%-94.9%, dialogs run 0.0%-2.5%. The floor sits in that empty gap.
+  ui_ink_sat: 100
+  ui_max_ink_sat_frac: 0.05
   ui_dilate: 9
   edge_margin: 2          # guard against shift wrap-around at the border
 
