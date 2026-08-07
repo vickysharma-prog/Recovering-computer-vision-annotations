@@ -1,0 +1,70 @@
+{
+ "frame": "10June10Camera1-Card1-0076.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2010/Ten Thousand Islands/Chocoloskee Bay Islet/10June10Camera1-Card1-0076.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2010/Ten Thousand Islands/Chocoloskee Bay Islet/10June10Camera1-Card1-0076.jpg",
+ "width": 1245,
+ "height": 854,
+ "seeded": true,
+ "seed_count": 116,
+ "survey_count": 9,
+ "band": "sparse",
+ "tiles_total": 24,
+ "tiles_reviewed": 12,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 678.7,
+   "y": 542.3,
+   "cls": "BRPE adult",
+   "pred": "3RPE WBN"
+  },
+  {
+   "x": 625.1,
+   "y": 631.9,
+   "cls": "BRPE adult",
+   "pred": null
+  },
+  {
+   "x": 551.1,
+   "y": 570.1,
+   "cls": "UNWA wbn",
+   "pred": null
+  },
+  {
+   "x": 488.3,
+   "y": 587,
+   "cls": "UNWA wbn",
+   "pred": null
+  },
+  {
+   "x": 476.1,
+   "y": 517.6,
+   "cls": "UNWA wbn",
+   "pred": null
+  },
+  {
+   "x": 581.1,
+   "y": 535.4,
+   "cls": "UNWA wbn",
+   "pred": null
+  },
+  {
+   "x": 349.7,
+   "y": 742.1,
+   "cls": "BRPE imm",
+   "pred": null
+  },
+  {
+   "x": 361,
+   "y": 771.1,
+   "cls": "BRPE imm",
+   "pred": null
+  },
+  {
+   "x": 346.9,
+   "y": 779.6,
+   "cls": "BRPE imm",
+   "pred": null
+  }
+ ]
+}

@@ -1,0 +1,442 @@
+{
+ "frame": "14June21Camera1-Card1-238.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2021/Apalachicola East/Lanark Reef West/14June21Camera1-Card1-238.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2021/Apalachicola East/Lanark Reef West/14June21Camera1-Card1-238.jpg",
+ "width": 1856,
+ "height": 955,
+ "seeded": true,
+ "seed_count": 30,
+ "survey_count": 71,
+ "band": "medium",
+ "tiles_total": 45,
+ "tiles_reviewed": 28,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 692,
+   "y": 483.5,
+   "cls": "CATE site",
+   "pred": null
+  },
+  {
+   "x": 1197.1,
+   "y": 363.8,
+   "cls": "SATE bird",
+   "pred": null
+  },
+  {
+   "x": 1294.4,
+   "y": 337.6,
+   "cls": "row 4 (red)",
+   "pred": null
+  },
+  {
+   "x": 1095.6,
+   "y": 454.6,
+   "cls": "SATE bird",
+   "pred": null
+  },
+  {
+   "x": 1098,
+   "y": 551.1,
+   "cls": "CATE bird",
+   "pred": null
+  },
+  {
+   "x": 807.3,
+   "y": 484.4,
+   "cls": "CATE site",
+   "pred": null
+  },
+  {
+   "x": 188.3,
+   "y": 41.1,
+   "cls": "LAGU bird",
+   "pred": null
+  },
+  {
+   "x": 251.8,
+   "y": 349.6,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 241.2,
+   "y": 354.4,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 227.8,
+   "y": 407.1,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 294,
+   "y": 355,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 323.4,
+   "y": 61.6,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 279.3,
+   "y": 42.9,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 226.5,
+   "y": 56.9,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 356.8,
+   "y": 103,
+   "cls": "row 6 (green)",
+   "pred": null
+  },
+  {
+   "x": 276.6,
+   "y": 67.6,
+   "cls": "SATE bird",
+   "pred": null
+  },
+  {
+   "x": 1155.5,
+   "y": 363.9,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1195.9,
+   "y": 324.6,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1204,
+   "y": 310.7,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1221.3,
+   "y": 329.2,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1239.8,
+   "y": 310.7,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1287.1,
+   "y": 306.1,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1311.4,
+   "y": 310.7,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1287.1,
+   "y": 322.3,
+   "cls": "WILL bird",
+   "pred": null
+  },
+  {
+   "x": 1295.2,
+   "y": 205.6,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1277.9,
+   "y": 279.6,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1048.1,
+   "y": 335,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1103.5,
+   "y": 399.7,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1223.6,
+   "y": 373.1,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1224.3,
+   "y": 365.3,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1219,
+   "y": 351.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1226.3,
+   "y": 353.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1233,
+   "y": 347.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1228.3,
+   "y": 341.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1240.4,
+   "y": 359.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1232.3,
+   "y": 330.5,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1235.7,
+   "y": 321.8,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1221.6,
+   "y": 319.8,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1184.9,
+   "y": 313.8,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1172.2,
+   "y": 337.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1259.7,
+   "y": 321.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1273.8,
+   "y": 318.5,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1272.4,
+   "y": 327.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1262.4,
+   "y": 343.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1279.1,
+   "y": 355.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 1299.2,
+   "y": 347.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 835.1,
+   "y": 567,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 761,
+   "y": 663.3,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 656.1,
+   "y": 586.3,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 650.3,
+   "y": 763.4,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 600.4,
+   "y": 811.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 694.6,
+   "y": 272.8,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 231,
+   "y": 510.1,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 239.9,
+   "y": 500.1,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 239.9,
+   "y": 492.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 251.6,
+   "y": 485.1,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 260.6,
+   "y": 491.2,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 251.1,
+   "y": 502.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 248.9,
+   "y": 509.6,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 314.6,
+   "y": 470.6,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 323.5,
+   "y": 458.9,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 309,
+   "y": 439.4,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 329.1,
+   "y": 428.3,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 267.8,
+   "y": 410.5,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 495.8,
+   "y": 882.3,
+   "cls": "UNSB ad",
+   "pred": null
+  },
+  {
+   "x": 269.4,
+   "y": 562.6,
+   "cls": "CATE site",
+   "pred": null
+  },
+  {
+   "x": 415.1,
+   "y": 700.4,
+   "cls": "CATE bird",
+   "pred": null
+  },
+  {
+   "x": 381.8,
+   "y": 707.3,
+   "cls": "CATE bird",
+   "pred": null
+  },
+  {
+   "x": 160,
+   "y": 488.4,
+   "cls": "CATE bird",
+   "pred": null
+  },
+  {
+   "x": 615.5,
+   "y": 179.1,
+   "cls": "CATE bird",
+   "pred": null
+  },
+  {
+   "x": 173.6,
+   "y": 138.1,
+   "cls": "CATE bird",
+   "pred": null
+  }
+ ]
+}

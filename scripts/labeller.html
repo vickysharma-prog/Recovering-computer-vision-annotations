@@ -1,0 +1,328 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>__FRAME__ — dot labeller</title>
+<style>
+  :root { --ink:#1a1a1a; --dim:#6b6b6b; --line:#d8d7d2; --bg:#f7f6f3; --acc:#2f6f4f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.5 ui-sans-serif,system-ui,sans-serif; color:var(--ink);
+         background:var(--bg); display:flex; height:100vh; overflow:hidden; }
+  #stage { flex:1; position:relative; overflow:hidden; background:#222; cursor:crosshair; }
+  canvas { position:absolute; top:0; left:0; }
+  aside { width:250px; border-left:1px solid var(--line); background:#fff; padding:12px;
+          overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+  h1 { font-size:13px; margin:0; word-break:break-all; }
+  .n { font-size:26px; font-weight:600; }
+  .n small { font-size:12px; font-weight:400; color:var(--dim); }
+  .cls { display:flex; align-items:center; gap:7px; padding:4px 6px; border-radius:4px;
+         cursor:pointer; border:1px solid transparent; font-size:12px; }
+  .cls:hover { background:#f0efec; }
+  .cls.on { border-color:var(--acc); background:#eaf3ee; }
+  .sw { width:13px; height:13px; border-radius:3px; border:1px solid #0003; flex:none; }
+  .gl { width:30px; height:30px; image-rendering:pixelated; border:1px solid var(--line);
+        border-radius:3px; flex:none; background:#fff; }
+  .k { font:11px ui-monospace,monospace; color:var(--dim); flex:none; }
+  button { font:inherit; padding:7px; border:1px solid var(--line); background:#fff;
+           border-radius:5px; cursor:pointer; width:100%; }
+  button:hover { background:#f0efec; }
+  button.go { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .hint { color:var(--dim); font-size:11px; }
+  hr { border:0; border-top:1px solid var(--line); margin:0; }
+  #warn { color:#a33; font-size:11px; }
+</style>
+<div id="stage"><canvas id="cv"></canvas></div>
+<aside>
+  <h1>__FRAME__</h1>
+  <div><span class="n" id="count">0</span> <small id="sub">dots · survey says __TRUTH__</small></div>
+  <div class="n" style="font-size:15px"><span id="done">0</span><small> classified · <span id="todo">0</span> left</small></div>
+  <div id="warn"></div>
+  <hr>
+  <div>
+    <strong style="font-size:12px">Class — from this image's own legend</strong>
+    <div class="hint" style="margin:2px 0 6px">
+      Pick a class, then click every marker of that class. Working one class at a
+      time is far faster than switching per dot. Match the glyph, not just the
+      colour — the hard pairs share a colour.
+    </div>
+    <div id="classes"></div>
+  </div>
+  <hr>
+  <div>
+    <div><input type="checkbox" id="grid" checked> <label for="grid">Sweep grid</label></div>
+    <div class="hint" id="swept">0 / 0 tiles reviewed</div>
+    <div class="hint">A tile turns clear once you have panned over it at 2x or closer.</div>
+  </div>
+  <hr>
+  <div>
+    <button id="dlgbtn">Show the dialog (D)</button>
+    <div class="hint">The parsed class names come from OCR at 60-65% on the count
+      column, so check a name against the picture before trusting it.</div>
+    <img id="dlgimg" style="display:none;width:100%;margin-top:6px;border:1px solid var(--line);border-radius:4px">
+  </div>
+  <hr>
+  <button class="go" id="save">Save JSON  (S)</button>
+  <button id="undo">Undo  (U)</button>
+  <button id="clear">Clear all seeds</button>
+  <label style="display:block">
+    <span class="hint">Resume from a saved .json</span>
+    <input type="file" id="load" accept=".json" style="width:100%;font-size:11px">
+  </label>
+  <div class="hint" id="auto">autosaving…</div>
+  <div class="hint">
+    <b>1-9</b> pick class, then click markers<br>
+    <b>Click</b> empty = add · <b>Click</b> dot = assign<br>
+    <b>Shift+click</b> or no class = delete<br>
+    <b>N</b> = jump to next unclassified<br>
+    <b>Drag</b> = pan · <b>Wheel</b> = zoom<br>
+    <b>0</b> = clear class · <b>H</b> = hide dots
+  </div>
+</aside>
+<script>
+const DATA = __DATA__;
+const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+let img = new Image(), dots = DATA.seeds.slice(), cls = null, hide = false;
+let z = 1, ox = 0, oy = 0, drag = null, moved = false;
+const TILE = 220, swept = new Set();
+const KEY = 'labeller:' + DATA.frame;
+
+// Autosave. Labelling a dense frame is an hour or more of clicking and a stray
+// refresh would otherwise discard all of it, so state goes to localStorage after
+// every edit and is offered back on load.
+const history = [];
+function snapshot() { history.push(JSON.stringify(dots)); if (history.length > 200) history.shift(); }
+function persist() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ dots, swept: [...swept], at: Date.now() }));
+    document.getElementById('auto').textContent =
+      'autosaved ' + new Date().toLocaleTimeString() + ' · ' + dots.length + ' dots';
+  } catch (e) { document.getElementById('auto').textContent = 'autosave FAILED: ' + e.message; }
+}
+function restore() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s.dots) return;
+    const when = new Date(s.at).toLocaleString();
+    if (confirm(`Found autosaved work for this frame from ${when} (${s.dots.length} dots).\n\nOK = continue it.  Cancel = start over from the seeds.`)) {
+      dots = s.dots; (s.swept || []).forEach(t => swept.add(t));
+    }
+  } catch (e) { /* corrupt entry: fall through to the seeds */ }
+}
+
+img.onload = () => { restore(); fit(); markSwept(); draw(); persist(); };
+img.src = DATA.image;
+
+function fit() {
+  cv.width = stage.clientWidth; cv.height = stage.clientHeight;
+  z = Math.min(cv.width / img.width, cv.height / img.height);
+  ox = (cv.width - img.width * z) / 2; oy = (cv.height - img.height * z) / 2;
+}
+function tilesAcross() { return Math.ceil(img.width / TILE); }
+function tilesDown() { return Math.ceil(img.height / TILE); }
+
+// A tile counts as reviewed once it has been on screen at 2x or closer — that is
+// the zoom at which a 4px marker is actually visible. Seeded labelling otherwise
+// only ever confirms what the detector already found.
+function markSwept() {
+  if (z < 2) return;
+  for (let ty = 0; ty < tilesDown(); ty++)
+    for (let tx = 0; tx < tilesAcross(); tx++) {
+      const sx = tx * TILE * z + ox, sy = ty * TILE * z + oy;
+      if (sx < cv.width && sy < cv.height && sx + TILE * z > 0 && sy + TILE * z > 0)
+        swept.add(tx + ',' + ty);
+    }
+  const tot = tilesAcross() * tilesDown();
+  document.getElementById('swept').textContent = `${swept.size} / ${tot} tiles reviewed`;
+}
+
+function draw() {
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.fillStyle = '#222'; cx.fillRect(0, 0, cv.width, cv.height);
+  cx.setTransform(z, 0, 0, z, ox, oy);
+  cx.imageSmoothingEnabled = z < 3;
+  cx.drawImage(img, 0, 0);
+
+  if (document.getElementById('grid').checked) {
+    cx.lineWidth = 1 / z;
+    for (let ty = 0; ty < tilesDown(); ty++)
+      for (let tx = 0; tx < tilesAcross(); tx++) {
+        cx.strokeStyle = swept.has(tx + ',' + ty) ? 'rgba(80,220,140,.30)' : 'rgba(255,90,90,.55)';
+        cx.strokeRect(tx * TILE, ty * TILE, TILE, TILE);
+      }
+  }
+  // The dialog, shaded out. Its legend markers are not annotations on the aerial
+  // and must not be labelled — the detector excludes this box, so a dot placed
+  // inside it would be scored as a marker the detector missed.
+  if (DATA.dialog_bbox) {
+    const [bx, by, bw, bh] = DATA.dialog_bbox;
+    cx.fillStyle = 'rgba(20,20,20,.55)'; cx.fillRect(bx, by, bw, bh);
+    cx.strokeStyle = 'rgba(255,180,60,.9)'; cx.lineWidth = 2 / z;
+    cx.strokeRect(bx, by, bw, bh);
+  }
+  // Unclassified dots are drawn as a dashed white ring so they stay visible
+  // against every background; classified ones take their legend colour. The
+  // contrast is the point — what still needs work should be obvious at a glance.
+  if (!hide) for (const d of dots) {
+    cx.beginPath(); cx.arc(d.x, d.y, 7 / z, 0, 6.284);
+    cx.lineWidth = 1.8 / z;
+    if (d.cls) { cx.setLineDash([]); cx.strokeStyle = DATA.colors[d.cls] || '#0f0'; }
+    else { cx.setLineDash([3 / z, 3 / z]); cx.strokeStyle = '#fff'; }
+    cx.stroke();
+  }
+  cx.setLineDash([]);
+  const done = dots.filter(d => d.cls).length;
+  document.getElementById('count').textContent = dots.length;
+  document.getElementById('done').textContent = done;
+  document.getElementById('todo').textContent = dots.length - done;
+  const w = document.getElementById('warn');
+  w.textContent = (z < 2) ? 'Zoom past 2x to review tiles.' : '';
+}
+
+function toImg(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left - ox) / z, y: (e.clientY - r.top - oy) / z };
+}
+stage.onmousedown = e => { drag = { x: e.clientX, y: e.clientY, ox, oy }; moved = false; };
+window.onmousemove = e => {
+  if (!drag) return;
+  if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) moved = true;
+  ox = drag.ox + e.clientX - drag.x; oy = drag.oy + e.clientY - drag.y;
+  markSwept(); draw();
+};
+window.onmouseup = e => {
+  if (drag && !moved) {
+    const p = toImg(e);
+    if (p.x >= 0 && p.y >= 0 && p.x < img.width && p.y < img.height) {
+      let hit = -1, best = 9e9;
+      dots.forEach((d, i) => {
+        const dd = (d.x - p.x) ** 2 + (d.y - p.y) ** 2;
+        if (dd < best && dd < (10 / z) ** 2) { best = dd; hit = i; }
+      });
+      // With a class selected you are labelling, so a click on an existing dot
+      // assigns to it; with no class selected you are cleaning up, so the same
+      // click deletes. Shift always deletes. This is what makes one-class-at-a-
+      // time sweeps quick: pick the class, then click straight down the colony.
+      snapshot();
+      if (hit >= 0) {
+        if (e.shiftKey || !cls) dots.splice(hit, 1);
+        else dots[hit].cls = cls;
+      } else {
+        dots.push({ x: +p.x.toFixed(1), y: +p.y.toFixed(1), cls: cls, pred: null });
+      }
+      persist();
+    }
+    draw();
+  }
+  drag = null;
+};
+stage.onwheel = e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const f = e.deltaY < 0 ? 1.2 : 1 / 1.2, nz = Math.max(0.05, Math.min(40, z * f));
+  ox = mx - (mx - ox) * (nz / z); oy = my - (my - oy) * (nz / z); z = nz;
+  markSwept(); draw();
+};
+
+const cbox = document.getElementById('classes');
+DATA.classes.forEach((c, i) => {
+  const el = document.createElement('div');
+  el.className = 'cls'; el.dataset.name = c;
+  const g = (DATA.glyphs || {})[c];
+  el.innerHTML = (g ? `<img class="gl" src="${g}" alt="">`
+                    : `<span class="sw" style="background:${DATA.colors[c] || '#999'}"></span>`) +
+                 `<span style="flex:1">${c}</span><span class="k">${i < 9 ? i + 1 : ''}</span>`;
+  el.onclick = () => pick(c);
+  cbox.appendChild(el);
+});
+function pick(c) {
+  cls = (cls === c) ? null : c;
+  [...cbox.children].forEach(el => el.classList.toggle('on', el.dataset.name === cls));
+}
+
+// Real undo. The first version popped the last dot, which silently did the wrong
+// thing after a delete or a class assignment — it removed a dot the labeller had
+// not touched instead of reversing what they just did.
+function undo() {
+  const prev = history.pop();
+  if (prev === undefined) return;
+  dots = JSON.parse(prev);
+  draw(); persist();
+}
+document.getElementById('undo').onclick = undo;
+document.getElementById('grid').onchange = draw;
+
+document.getElementById('clear').onclick = () => {
+  if (!confirm(`Delete all ${dots.length} dots and label this frame from scratch?\n\nUse this when the seeds are more wrong than right — on some frames the detector produces far more than there are markers.`)) return;
+  snapshot(); dots = []; draw(); persist();
+};
+
+document.getElementById('load').onchange = ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const s = JSON.parse(fr.result);
+      if (!Array.isArray(s.dots)) throw new Error('no dots array');
+      if (s.frame && s.frame !== DATA.frame &&
+          !confirm(`That file is for ${s.frame}, not ${DATA.frame}. Load it anyway?`)) return;
+      snapshot(); dots = s.dots; draw(); persist();
+    } catch (e) { alert('Could not read that file: ' + e.message); }
+  };
+  fr.readAsText(f);
+};
+
+const dlgimg = document.getElementById('dlgimg');
+document.getElementById('dlgbtn').onclick = () => {
+  if (!DATA.dialog) { alert('The legend did not parse on this frame, so there is no dialog crop. Label positions, and use "unclear / not in legend" for class.'); return; }
+  dlgimg.src = DATA.dialog;
+  dlgimg.style.display = dlgimg.style.display === 'none' ? 'block' : 'none';
+};
+document.getElementById('save').onclick = () => {
+  const tot = tilesAcross() * tilesDown(), left = tot - swept.size;
+  // Recall computed from a partly-reviewed frame reads as a detector failure when
+  // it is really an unfinished label, so this has to be refused loudly rather
+  // than recorded quietly.
+  if (left > 0 && !confirm(
+      `${left} of ${tot} tiles have not been reviewed at 2x or closer.\n\n` +
+      `Any marker in them is missing from the labels, and the eval will score ` +
+      `that as a detection miss. Save anyway?`)) return;
+  const unclassed = dots.filter(d => !d.cls).length;
+  if (unclassed && unclassed < dots.length && !confirm(
+      `${unclassed} of ${dots.length} dots have no class.\n\n` +
+      `They still count for detection scoring; they are simply skipped for ` +
+      `classification. Save anyway?`)) return;
+  const out = {
+    frame: DATA.frame, screenshot_key: DATA.key, highres_key: DATA.highres_key,
+    width: img.width, height: img.height,
+    seeded: DATA.seeds.length > 0, seed_count: DATA.seeds.length,
+    survey_count: DATA.truth, band: DATA.band,
+    tiles_total: tilesAcross() * tilesDown(), tiles_reviewed: swept.size,
+    tile_px: TILE, dots: dots
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)],
+                                        { type: 'application/json' }));
+  a.download = DATA.frame.replace(/\.jpg$/i, '') + '.json';
+  a.click();
+};
+window.onkeydown = e => {
+  if (e.key === 's') document.getElementById('save').click();
+  else if (e.key === 'u') undo();
+  else if (e.key === 'd') document.getElementById('dlgbtn').click();
+  else if (e.key === 'h') { hide = !hide; draw(); }
+  else if (e.key === '0') { cls = null; pick(null); }
+  else if (e.key === 'n') {
+    const d = dots.find(d => !d.cls);
+    if (d) {                       // centre it, keeping the current zoom
+      if (z < 4) z = 4;
+      ox = cv.width / 2 - d.x * z; oy = cv.height / 2 - d.y * z;
+      markSwept(); draw();
+    }
+  } else if (e.key >= '1' && e.key <= '9') {
+    const c = DATA.classes[+e.key - 1]; if (c) pick(c);
+  }
+};
+window.onresize = () => { cv.width = stage.clientWidth; cv.height = stage.clientHeight; draw(); };
+</script>

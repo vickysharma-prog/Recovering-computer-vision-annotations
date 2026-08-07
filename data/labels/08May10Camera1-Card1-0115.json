@@ -1,0 +1,232 @@
+{
+ "frame": "08May10Camera1-Card1-0115.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2010/Biloxi South/Biloxi South 3/08May10Camera1-Card1-0115.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2010/Biloxi South/Biloxi South 3/08May10Camera1-Card1-0115.jpg",
+ "width": 1238,
+ "height": 614,
+ "seeded": false,
+ "seed_count": 0,
+ "survey_count": 36,
+ "band": "sparse",
+ "tiles_total": 18,
+ "tiles_reviewed": 0,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 572.4,
+   "y": 234.3,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 640.1,
+   "y": 193.3,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 622.3,
+   "y": 34.7,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 757.7,
+   "y": 123.4,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 859.7,
+   "y": 222.1,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 834.2,
+   "y": 231,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 812,
+   "y": 249.9,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 812,
+   "y": 289.8,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 829.8,
+   "y": 314.2,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 729.9,
+   "y": 346.4,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 634.5,
+   "y": 399.6,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 727.7,
+   "y": 528.3,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 859.7,
+   "y": 551.6,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 439.3,
+   "y": 284.3,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 360.5,
+   "y": 246.5,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 484.8,
+   "y": 107.9,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 288.4,
+   "y": 125.6,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 246.3,
+   "y": 91.2,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 217.4,
+   "y": 207.7,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 203,
+   "y": 242.1,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 146.4,
+   "y": 280.9,
+   "cls": "TRHE site",
+   "pred": null
+  },
+  {
+   "x": 736.6,
+   "y": 302,
+   "cls": "TRHE bird",
+   "pred": null
+  },
+  {
+   "x": 694.4,
+   "y": 428.5,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 827.6,
+   "y": 454,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 849.7,
+   "y": 454,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 866.4,
+   "y": 459.5,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 866.4,
+   "y": 419.6,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 639,
+   "y": 350.8,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 581.3,
+   "y": 186.6,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 726.6,
+   "y": 197.7,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 712.2,
+   "y": 238.8,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 746.6,
+   "y": 249.9,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 447.1,
+   "y": 145.6,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 369.4,
+   "y": 93.5,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 322.8,
+   "y": 201.1,
+   "cls": "SNEG site",
+   "pred": null
+  },
+  {
+   "x": 406,
+   "y": 284.3,
+   "cls": "SNEG site",
+   "pred": null
+  }
+ ]
+}

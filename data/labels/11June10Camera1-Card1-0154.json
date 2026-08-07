@@ -1,0 +1,448 @@
+{
+ "frame": "11June10Camera1-Card1-0154.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2010/Tampa Bay/Piney Point Mangroves/11June10Camera1-Card1-0154.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2010/Tampa Bay/Piney Point Mangroves/11June10Camera1-Card1-0154.jpg",
+ "width": 1236,
+ "height": 863,
+ "seeded": true,
+ "seed_count": 75,
+ "survey_count": 72,
+ "band": "medium",
+ "tiles_total": 24,
+ "tiles_reviewed": 14,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 1021,
+   "y": 54,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 874,
+   "y": 194,
+   "cls": "WHIB site",
+   "pred": "WHIB site"
+  },
+  {
+   "x": 349,
+   "y": 230,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 1146.5,
+   "y": 249,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 345,
+   "y": 414,
+   "cls": "WHIB site",
+   "pred": "WHIB site"
+  },
+  {
+   "x": 1031,
+   "y": 477,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 737,
+   "y": 481,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 1128,
+   "y": 503,
+   "cls": "WHIB site",
+   "pred": "WHIB site"
+  },
+  {
+   "x": 983,
+   "y": 637,
+   "cls": "WHIB site",
+   "pred": "WHIB adult"
+  },
+  {
+   "x": 1055.6,
+   "y": 641.9,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 1042.4,
+   "y": 727.1,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 1133.3,
+   "y": 596.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 985.6,
+   "y": 458.3,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 826.5,
+   "y": 613.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 833.1,
+   "y": 591.8,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 721.4,
+   "y": 467.7,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 728,
+   "y": 522.6,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 753.6,
+   "y": 565.2,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 761.2,
+   "y": 456.4,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 781.1,
+   "y": 424.2,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 991.6,
+   "y": 110,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 982.1,
+   "y": 85.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 968.4,
+   "y": 67.7,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 785.2,
+   "y": 103.9,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 510.6,
+   "y": 384,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 395.4,
+   "y": 122.8,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 775.6,
+   "y": 509.4,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 785.2,
+   "y": 528.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 861.5,
+   "y": 569.4,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 839.7,
+   "y": 551.6,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 826.9,
+   "y": 267.1,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 698.2,
+   "y": 263.3,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 607.3,
+   "y": 251.9,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 574.1,
+   "y": 230.2,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 633.8,
+   "y": 288.9,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 638.5,
+   "y": 313.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 609.2,
+   "y": 300.2,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 635.7,
+   "y": 369.3,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 621.5,
+   "y": 459.3,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 450.1,
+   "y": 461.2,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 461.5,
+   "y": 439.4,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 433.1,
+   "y": 434.7,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 388.6,
+   "y": 329.6,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 359.2,
+   "y": 339,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 345,
+   "y": 309.7,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 374.4,
+   "y": 295.5,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 352.6,
+   "y": 432.8,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 985,
+   "y": 315.4,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 669.2,
+   "y": 277.1,
+   "cls": "WHIB site",
+   "pred": null
+  },
+  {
+   "x": 890.7,
+   "y": 473.7,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 882.8,
+   "y": 402.1,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 901,
+   "y": 389.6,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 882.8,
+   "y": 349.8,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 856.6,
+   "y": 388.5,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 839.6,
+   "y": 388.5,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 569.2,
+   "y": 404.4,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 127.3,
+   "y": 324.8,
+   "cls": "WHIB adult",
+   "pred": null
+  },
+  {
+   "x": 510.4,
+   "y": 78.3,
+   "cls": "DCCO adult",
+   "pred": null
+  },
+  {
+   "x": 454.6,
+   "y": 288.5,
+   "cls": "NECO wbn",
+   "pred": null
+  },
+  {
+   "x": 301.2,
+   "y": 313.1,
+   "cls": "NECO wbn",
+   "pred": null
+  },
+  {
+   "x": 706.4,
+   "y": 162.5,
+   "cls": "NECO wbn",
+   "pred": null
+  },
+  {
+   "x": 873,
+   "y": 140.8,
+   "cls": "NECO wbn",
+   "pred": null
+  },
+  {
+   "x": 819.1,
+   "y": 58.4,
+   "cls": "NECO wbn",
+   "pred": null
+  },
+  {
+   "x": 1070,
+   "y": 244.9,
+   "cls": "CAEG site",
+   "pred": null
+  },
+  {
+   "x": 909.9,
+   "y": 613.2,
+   "cls": "CAEG site",
+   "pred": null
+  },
+  {
+   "x": 396.8,
+   "y": 455.1,
+   "cls": "GREG wbn",
+   "pred": null
+  },
+  {
+   "x": 624,
+   "y": 193.8,
+   "cls": "GREG wbn",
+   "pred": null
+  },
+  {
+   "x": 665.7,
+   "y": 243,
+   "cls": "GREG wbn",
+   "pred": null
+  },
+  {
+   "x": 843.7,
+   "y": 309.3,
+   "cls": "GREG wbn",
+   "pred": null
+  },
+  {
+   "x": 512.8,
+   "y": 69.9,
+   "cls": "DCCO adult",
+   "pred": null
+  },
+  {
+   "x": 281.3,
+   "y": 35.6,
+   "cls": "DCCO adult",
+   "pred": null
+  },
+  {
+   "x": 290.5,
+   "y": 47,
+   "cls": "NECO wbn",
+   "pred": null
+  }
+ ]
+}

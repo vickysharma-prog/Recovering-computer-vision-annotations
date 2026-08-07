@@ -248,3 +248,9 @@ results/report_fig/fig_classify_*.jpg
 .comet.config
 comet.config
 .env
+
+# Generated labelling pages: one self-contained HTML per frame with the screenshot
+# embedded as base64, so ~1MB each. Rebuild any time with scripts/label_dots.py.
+# The labels themselves (data/labels/) ARE tracked - they are hand-made ground truth
+# and the only thing detection can be scored against.
+results/labelling/

@@ -1,0 +1,76 @@
+{
+ "frame": "18May15Camera2-Card5-00825.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2015/Biloxi North/Door Point Lagoon 2/18May15Camera2-Card5-00825.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2015/Biloxi North/Door Point Lagoon 2/18May15Camera2-Card5-00825.jpg",
+ "width": 1651,
+ "height": 908,
+ "seeded": true,
+ "seed_count": 10,
+ "survey_count": 10,
+ "band": "sparse",
+ "tiles_total": 40,
+ "tiles_reviewed": 0,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 1193,
+   "y": 253.2,
+   "cls": "LAGU site",
+   "pred": null
+  },
+  {
+   "x": 1208.3,
+   "y": 252.3,
+   "cls": "LAGU bird",
+   "pred": null
+  },
+  {
+   "x": 1166.3,
+   "y": 287.1,
+   "cls": "LAGU site",
+   "pred": "LAGU site"
+  },
+  {
+   "x": 437.2,
+   "y": 429.1,
+   "cls": "LAGU site",
+   "pred": "LAGU site"
+  },
+  {
+   "x": 549.6,
+   "y": 525.6,
+   "cls": "LAGU bird",
+   "pred": "LAGU bird"
+  },
+  {
+   "x": 571.4,
+   "y": 531.3,
+   "cls": "LAGU bird",
+   "pred": "LAGU bird"
+  },
+  {
+   "x": 585.4,
+   "y": 560.6,
+   "cls": "LAGU bird",
+   "pred": "LAGU bird"
+  },
+  {
+   "x": 518.5,
+   "y": 569.5,
+   "cls": "LAGU bird",
+   "pred": "LAGU bird"
+  },
+  {
+   "x": 669.6,
+   "y": 618.6,
+   "cls": "LAGU bird",
+   "pred": "LAGU bird"
+  },
+  {
+   "x": 682.7,
+   "y": 619.4,
+   "cls": "LAGU site",
+   "pred": null
+  }
+ ]
+}
