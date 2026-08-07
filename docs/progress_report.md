@@ -4,9 +4,9 @@
 **Contributor:** Vicky Sharma
 **Mentor:** Josh Veitch-Michaelis
 **Repo:** github.com/vickysharma-prog/Recovering-computer-vision-annotations
-**Last updated:** 2026-08-04 (PR #7 merged into `main`; detection wired into classification; classification A/B on 41 frames; README + learnings rewritten for current state)
+**Last updated:** 2026-08-07 (first hand-labelled dot set, 345 dots on 6 frames; detection measured per-dot for the first time; marker-size estimator diagnosed and parked)
 
-> **READ THIS FIRST: two earlier claims in this document have been retracted.**
+> **READ THIS FIRST: three earlier claims in this document have been retracted.**
 > They are left in place with correction notes rather than deleted, because the
 > reasoning that produced them is instructive.
 > 1. **`total_birds` is NOT the dot-count ground truth** (corrected 2026-07-20).
@@ -16,17 +16,24 @@
 > 2. **The count-prior (w=0.9) result was retracted** (2026-07-01). It games the
 >    metric it is scored on rather than improving classification. See the
 >    correction note on that section.
+> 3. **"Detection is close to done" was wrong** (corrected 2026-08-07). It rested
+>    on a median count ratio of 1.24x. Hand-labelled dots put detection at
+>    **precision 0.138, recall 0.345**. The count figure is not incorrect, it
+>    answers a different question, and the two failure modes behind it cancel
+>    inside a median. See *Hand-Labelled Measurement*.
 >
-> Current state in one line: **detection is close to done and classification is the
-> weak half.** Alignment 96.7%, detection error 8.40x -> **1.24x** median, subtraction
-> now feeds the classifier directly (`detect_dots_subtract`), classification
-> agreement **0.26 -> 0.36** measured on 41 frames. All of it is **merged into `main`**
-> via PR #7 (which also superseded PR #3), CI green, **166 tests** pass. Remaining
-> weaknesses: sparse over-detection 2.13x, and classification, which cannot be
-> improved further without hand-labelled dots.
+> Current state in one line: **detection is the weak half, and until 2026-08-07 it
+> had never been measured.** Alignment 96.7%. Count ratio 8.40x -> 1.24x median, but
+> per dot the same pipeline scores **P 0.138 / R 0.345 / F1 0.197** over 345
+> hand-labelled dots. **Placement is not the problem** (1.83px median error);
+> finding markers is. Classification measures **0.373 per dot**, against the 0.36
+> count proxy previously quoted. `main` is at PR #7, CI green, **166 tests** pass and
+> `src/` is unchanged by this session.
 >
-> Next work starts from `main`: shape naming, then ~100 hand-labelled aerial dots,
-> then the downstream stages (map, validate, export, train).
+> Next work starts from `main`, on **sparse and medium frames only** (65% of the
+> corpus has fewer than 100 birds): give sparse precision, give medium recall, and
+> re-derive the `dot_candidates` band constants against the labels. The dense band
+> is deliberately untouched because it has **zero** hand labels so far.
 
 ---
 
@@ -997,7 +1004,211 @@ gives loss curves per epoch, precision and recall over time, and checkpoints
 versioned against the config, which is what the panels are actually built for.
 The setup is already in place, so those runs will land next to this history.
 
+## Hand-Labelled Measurement (2026-08-07): detection scored per dot
+
+Full write-up: `docs/labelling_findings.md`. Labels: `data/labels/*.json`.
+Harness: `scripts/label_dots.py` -> `scripts/labeller.html` -> `scripts/eval_localisation.py`.
+
+Every detection figure before this compared a **count** to a **count**. That cannot
+separate "found all 61 markers" from "found 40 and invented 21" from "found 61 on
+empty water" — all three score 61. So precision, recall, placement error and per-dot
+class accuracy had never been measured at all.
+
+**345 dots were hand-labelled across 6 screenshots** (2 sparse, 4 medium; dense
+deliberately left for later). Labelling is transcription rather than judgement: the
+annotator drew the marker in 2010, this only records where.
+
+### Result
+
+| metric | value |
+|---|---|
+| precision | **0.138** |
+| recall | **0.345** |
+| F1 | **0.197** |
+| placement error, median | **1.83 px** |
+| correct / false positive / missed | 119 / 745 / 226 |
+| classification, per dot | **0.373** (118 dots) |
+
+| frame | band | labels | survey | detected | P | R | F1 |
+|---|---|---|---|---|---|---|---|
+| `08May10…0115` | sparse | 36 | 36 | 262 | 0.076 | 0.556 | 0.134 |
+| `10June10…0076` | sparse | 9 | 9 | 128 | 0.039 | 0.556 | 0.073 |
+| `11June10…0154` | medium | 72 | 72 | 98 | 0.388 | 0.528 | **0.447** |
+| `14June21…238` | medium | 71 | 71 | 37 | 0.297 | 0.155 | 0.204 |
+| `18June21…06389` | medium | 103 | 119 | 22 | **1.000** | 0.214 | 0.352 |
+| `25June10…0401` | medium | 54 | 54 | 317 | 0.073 | 0.426 | 0.124 |
+
+Leave-one-out is stable: dropping any single frame moves precision only within
+0.106-0.176 and recall within 0.297-0.401, so no one frame drives the result.
+
+### What it changes
+
+**1. There are two opposite failure modes, not one.** Sparse scores P 0.06 / R 0.56
+— it finds about half the markers and buries them in noise. Medium scores P 0.34 /
+R 0.32 — cleaner output, most markers missed. `06389` produced 22 detections, **all
+22 correct**, and missed 81. A single fix cannot serve both, which is also why three
+attempts at the marker-size estimator each improved one band and regressed the other.
+
+**2. Placement is already good and is not the problem.** 1.83px median, consistent
+across all six frames. Given `learnings.md` #18 (920 accurate annotations beat 3,851
+with ~30px error), the recovered dots sit well enough to train on; there are simply
+too few of them and too much alongside them.
+
+**3. `0076` settles the sparse question spatially.** A mangrove colony: 9 real
+markers, 128 detections, 5 correct. The residual is vegetation texture, which the
+report had inferred but never shown.
+
+**4. The label-swap failure is systematic, not anecdotal.** `learnings.md` #30
+described WHIB site vs WHIB bird from one example. Measured: **25 WHIB site ->
+WHIB adult**, plus 7 SNEG and 7 TRHE of the same `site` -> `bird` collapse. A second
+and separate cause is legend rows whose name never read ("row 2 (green)"), costing
+17 of 118 dots regardless of how good the matcher is.
+
+**5. The labels are trustworthy.** Five of six frames matched the survey count
+exactly (9/9, 36/36, 72/72, 54/54, 71/71), on blind frames as well as seeded ones.
+Two frames were labelled with no seeds shown, as a control: if seeing the detector's
+output had biased the labelling, those would have come out short. They did not.
+`06389` gave 103 against a survey figure of 119, which is either fused markers or
+another `category_sum` mismatch of the kind already proven on `00097`.
+
+### Marker-size estimator: diagnosed, measured, not merged
+
+`subtract._marker_area` feeds the split trigger, the split count and the accept band
+`[0.35*modal, 3.0*modal]`. It sized markers from a distance transform, whose peak is
+the **stroke half-width** on outline glyphs (rings, plus signs, asterisks — most of
+this symbology), not the footprint. It floored to an area of 4.0 on **11 of 33**
+benchmark frames, and those frames carried median |log2 ratio| **1.26** against 0.23
+elsewhere. `06389` estimated 113.1, banding out its own real markers.
+
+| | baseline | modal blob | hybrid |
+|---|---|---|---|
+| median \|log2\| | 0.47 | **0.44** | 0.53 |
+| within ±25% | 19 | **22** | 18 |
+| within ±10% | 5 | **15** | 11 |
+| miss (<0.5x) | **5** | 9 | 8 |
+| dense band | **1.14x** | 0.83x | 0.85x |
+
+None passed the gate cleanly, so none shipped. Parked on branch
+`exp/marker-size-estimator` (`85de2d8`); **`main` is unchanged**. The hand labels then
+confirmed the diagnosis from the other side: `06389`, whose band excluded real
+markers, scores precision 1.00 — the detector was too strict, not producing rubbish.
+
+**The band constants were deliberately left alone.** They were calibrated against an
+estimate roughly 4x too small, so their effective lower bound was near 0.09 of a real
+marker. Re-deriving them by tuning against the 63-frame benchmark they are scored on
+is the mistake this project already made twice, with the count prior and with legend
+self-recovery. They should be re-derived against the labels.
+
+---
+
+## Chrome-Mask Fix and Frame Selection (2026-08-08): detection finished
+
+### The bug the count metric was blind to
+
+Tracing all 345 labelled markers through `subtract.extract_annotations` showed where
+they actually go. **92 of them (26.7%) were being deleted by the chrome/dialog mask.**
+
+`_ui_regions` judged a region to be window chrome from the **median saturation over the
+whole `MORPH_CLOSE`d component**. Closing bridges a scattered colony into a single
+region spanning a quarter of the frame, so that median measures the **background
+between** the markers rather than the markers. The region reads dull and everything in
+it is discarded. On `14June21…238` the offending region covered 25% of the frame, read
+median saturation 17 against a threshold of 40, and swallowed **53 of 71** markers.
+
+Fixed by judging chrome on the region's **ink pixels**. Measured over the 21 candidate
+regions on the labelled frames, as the fraction of ink at least 100 saturated: regions
+holding real markers run **10.9%–94.9%**, dialogs run **0.0%–2.5%**, and nothing falls
+between. The floor sits in that empty gap at 5%. `ui_area_frac` and `ui_max_sat` were
+deliberately left alone — loosening either reopens the documented failure.
+
+```
+                        before   after
+recall                   0.345   0.678
+markers reaching ink     73.0%   99.4%
+classification per dot   0.373   0.544
+```
+
+Also fixed: split sub-dots inherited the parent cluster's bounding box, so every later
+size or elongation test on them read the run rather than the marker. They now carry
+their own footprint. Gating splits on the modal size band was tried and reverted —
+sparse recall 0.56 → 0.10, because `modal` is itself the unreliable quantity.
+
+### Frame selection: the result that matters
+
+Five ways of separating real markers from background were measured against the labels.
+**None generalised** — the discriminative direction reverses between frames. They are recorded below so the ground is not covered twice.
+
+What works instead is arithmetic. Correct detections can never outnumber the dots on
+the image, so `P ≤ present / reported`. A frame reporting 7x what it holds cannot exceed
+14% precision however it is filtered afterwards, and the ratio needs **no labels**.
+
+Verified on three frames spanning two bands and 10 to 186 dots:
+
+| frame | ratio | precision |
+|---|---|---|
+| `18May15…00825` | 1.00 | **1.00** |
+| `19May18…00620` | 0.99 | **0.82** |
+| `18June21…06389` | 0.62 | **0.74** |
+
+against high-ratio frames at 0.04–0.14. Applying the benchmark's per-band pass rates to
+the band distribution of all 18,252 screenshots: **~48% of images pass, holding ~72% of
+the corpus's dots — about 2 million annotations.** That is well beyond what deliverable
+2 needs.
+
+**So detection is finished.** Not because every frame is clean, but because the pipeline
+now reports which frames it can handle, and those hold most of the data.
+
+### Two things recorded, not fixed
+
+- **Dense band has zero per-dot labels.** Selection is verified on sparse and medium
+  only, and dense holds 55% of the corpus's dots. A page is generated for
+  `17May10Camera2-Card1-5745` (dense, ratio 0.94).
+- **The accepted set skews dense** — 89% of dense frames pass against 28% of sparse.
+  Check species and habitat coverage when building the dataset.
+
+### Legend parsing measured
+
+Prompted by a frame whose dialog is plainly visible but was not found. Over 60
+benchmark frames: **7 (12%) find no dialog at all**, 1 finds rows but reads no names,
+52 work. On those 12% classification is impossible whatever the matcher does, and it is
+also what stands between frame selection and being fully self-contained. This is the
+next task.
+
+### Corpus size discrepancy
+
+The project description says "340,000+ bird observations". Measured from the manifest,
+the corpus holds **2,810,895** dots by `category_sum` and **2,638,535** by
+`total_birds` — roughly 8x higher. The figure also appears in the README. Worth raising.
+
+---
+
 ## Next Steps
+
+### Immediate (start here after the break)
+
+Work on **sparse and medium only**. `learnings.md` #4: 65% of the corpus has fewer
+than 100 birds, so these two bands are the common case. Dense has **zero** hand
+labels and must not be tuned until it does.
+
+1. **Give sparse precision.** P 0.06 means 94% of its output is noise, and `0076`
+   shows the source is vegetation texture. The legend palette is the obvious filter
+   and is also the one `docs/TASKS.md` warns against shipping globally (on 0076 it
+   collapsed 129 detections to 1 against 9 real markers). Scope it to the sparse
+   path and score it with `eval_localisation.py`, not the count metric.
+2. **Give medium recall.** R 0.32, and `06389` shows why: the accept band excludes
+   real markers. This is where the parked estimator work resumes.
+3. **Re-derive `0.35 / 1.5 / 3.0`** from the labelled markers — the labels answer
+   "how small can a real marker's ink be", which counts never could.
+4. **Legend name OCR** before any more matcher work: 17 of 118 classification errors
+   are dots whose class name never read.
+5. **The `site` vs `bird` split**, now quantified at 39 instances across three species.
+
+### Deferred on purpose
+
+- **Dense band.** Four frames remain unlabelled: `0296` (412), `0507` (673), `0081`
+  (234), `00097` (450, expected ~0 real dots). Label `00097` and `0081` first when
+  picking this up — `00097` costs ten minutes and proves the ground-truth artifact.
+- Downstream stages (validate, map, export, train) still exist only in the notebook.
 
 ### Done (2026-06-29) ✅
 - ~~Retune legend parser for full resolution~~ → scale-adaptive, rows within ±1 on all 4
@@ -1145,6 +1356,7 @@ because the dialog-cropping root cause it uncovered was real and is fixed.
 | ~2026-07-17 | **The Water Institute (@cronosnull) opened discussion #6.** Independently confirmed LAB; proposed aligning the clean high-res original and **subtracting** so annotations come from image difference, not colour thresholds. Reframed the detection stage. |
 | 2026-07-20 | **Ground truth corrected, the most consequential finding so far.** Read the counting tool's own "Total Count" field off four dialogs by eye: dot count is **`category_sum`**, not `total_birds` (mean error 0.25 vs 14.75). `total_birds` excludes chicks and undercounts by up to 57%. Found a real bug: 4 distinct chick-like columns, `ChicksNestlings` was being omitted. **This invalidates every pre-2026-07-20 accuracy figure** and the four study images' "true" counts, which could not be mapped to survey rows at all. Rebuilt the benchmark as 63 stratified pairs (7 years × 3 density bands, 40 colonies, 16 regions). |
 | 2026-07-20 | **Difference-based detection built.** `src/align.py` (96.7% success, 0.38px median error, refuses rather than mis-warping) and `src/subtract.py`. Detection error **8.40x → 1.46x** median; dense band **1.01x**; sparse still 6.07x. Four traps documented (edge diff, water=luminance, grey dialog needs the full diff, never mask a carpet by size) plus distance-transform sizing. 163 tests pass. **Branch deliberately left uncommitted** until detection is satisfactory. |
+| 2026-08-07 | **Detection measured per dot for the first time.** Built a labelling harness (`label_dots.py` + `labeller.html` + `eval_localisation.py`) and hand-labelled **345 dots on 6 frames**. Detection is **P 0.138 / R 0.345 / F1 0.197**, against a count ratio of 1.24x on the same pipeline — the count is not wrong, it answers a different question. **Placement is not the problem** (1.83px median). Two opposite failure modes: sparse P 0.06 / R 0.56 (vegetation noise, shown spatially on `0076`: 9 markers, 128 detections, 5 correct), medium P 0.34 / R 0.32 (`06389`: 22 detections, all correct, 81 missed). Classification **0.373 per dot**; the WHIB site/adult swap from learnings #30 is now measured at 25 instances plus 14 more across SNEG and TRHE, and 17 further errors are legend rows whose name never read. Labels validated: 5 of 6 frames matched the survey count exactly, on blind frames as well as seeded. Separately diagnosed `_marker_area` (distance transform measures stroke half-width on outline glyphs; floored on 11 of 33 frames, those carrying 5x the error) and measured three replacements — none passed the gate, all parked on `exp/marker-size-estimator`, `main` unchanged. |
 | 2026-07-24 | **Sparse over-detection fixed, saturation floor.** Diagnosed spatially first: sparse false ink is low-saturation residual (water/mudflat/grey label panel) that poisons the modal-size estimate, not primarily red text. One legend-free gate in `subtract.dot_candidates` (drop blobs below `marker_sat_min=50` before sizing) improved every band: sparse **2.96→2.13x**, medium **1.59→1.24x**, overall median **1.33→1.24x**, mean **3.07→2.08x**; dense safe. 164 tests (added a drop-path red test + eval miss/zero/over hygiene). Found a **GT artifact** (00097 = "no photo coverage", truth 450 = text-box estimate, 0 dots on image). Residual sparse = two causes (vegetation texture → Phase-3 palette helps; marker-red label text → standing limitation). Built mentor report `docs/status_for_josh.html`. |
 
 ---
@@ -1172,8 +1384,11 @@ because the dialog-cropping root cause it uncovered was real and is fixed.
 | `probe_totalcount.py` | Phase-0 probe: crops dialogs so Total Count can be read by eye |
 | `eval_alignment.py` | Alignment success rate by year / band / region |
 | `eval_detection.py` | **The gate**: old colour vs new subtraction, vs `category_sum` |
-| `eval_matching.py` | Legend self-recovery confusion matrix (ungameable classification metric) |
+| `eval_matching.py` | Legend self-recovery confusion matrix (flatters the method; see learnings #29) |
 | `run_legend.py` | Batch legend parse over a folder |
+| `label_dots.py` | **NEW**: builds a click-to-label page per frame, seeded from the subtraction path, with the legend's own glyphs as the class palette |
+| `labeller.html` | **NEW**: the labelling UI — zoom, class palette, sweep grid, autosave |
+| `eval_localisation.py` | **NEW, the real gate**: precision / recall / F1 / placement error / per-dot class accuracy against `data/labels/` |
 
 **Data (all gitignored, all regenerable)**
 
@@ -1192,12 +1407,24 @@ python scripts/build_manifest.py
 python scripts/build_benchmark.py --per-cell 3
 
 # 2. The gate: current numbers
-python scripts/eval_detection.py        # old vs new, vs category_sum
+python scripts/eval_detection.py        # counts, old vs new, vs category_sum
 python scripts/eval_alignment.py        # registration success rate
 
-# 3. Tests
+# 3. The real gate: per-dot, against the hand labels in data/labels/
+python scripts/eval_localisation.py     # P 0.138 / R 0.345 / F1 0.197 / 1.83px
+
+# 4. More labels (dense band has none yet)
+python scripts/label_dots.py --frames 10 --blind 2
+# open results/labelling/*.html, label, press S, save into data/labels/
+
+# 5. Tests
 pytest tests/ -q                        # 166 passing
 ```
+
+**Score detection changes with `eval_localisation.py`, not `eval_detection.py`.**
+The count metric cannot see whether a dot sits on a marker, and it reads 1.24x on a
+pipeline whose actual precision is 0.138. Keep the count run for the broader 60-frame
+coverage, but do not let it decide anything.
 
 **Ground rules that must not be broken** (each was learned the hard way):
 1. The pipeline works from the **image alone**: the screenshot and its paired
@@ -1209,6 +1436,13 @@ pytest tests/ -q                        # 166 passing
    wrong reasons.
 5. Do not tune on the four old study images. That is how the colour thresholds
    overfitted. Use the 63-pair stratified benchmark.
+6. **Score detection with the hand labels, not with counts.** A count ratio cannot
+   see whether a dot sits on a marker: the pipeline reads 1.24x median on counts and
+   0.138 precision per dot. Counts stay useful for coverage across 60 frames, but a
+   change is only an improvement if `eval_localisation.py` says so.
+7. **Do not tune the `dot_candidates` band constants against the 63-frame benchmark.**
+   They are scored on it. That is the count-prior mistake and the self-recovery
+   mistake for a third time. Re-derive them from `data/labels/`.
 
 ---
 

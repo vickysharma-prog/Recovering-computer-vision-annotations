@@ -254,3 +254,6 @@ comet.config
 # The labels themselves (data/labels/) ARE tracked - they are hand-made ground truth
 # and the only thing detection can be scored against.
 results/labelling/
+
+# Orientation notes kept for our own use, not part of the published repo.
+docs/PROJECT_STATE.md

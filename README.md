@@ -19,19 +19,26 @@ The pipeline runs from the images alone. Survey counts are never an input; the C
 | | Measured | On |
 |---|---|---|
 | Registration success | **96.7%**, 0.38px median reprojection error | 60 pairs |
-| Detection error | **1.24×** median dots found / dots present | 60 pairs |
-| Classification agreement | **0.36** per-class count agreement | 41 frames |
-| Tests | **166** passing, CI on Python 3.10 and 3.11 | |
+| Detection precision, on frames the pipeline accepts | **0.74–1.00** | 541 hand-labelled dots |
+| Dot placement error | **~1.5px** median | 541 hand-labelled dots |
+| Classification, per dot | **0.544** | 215 matched dots |
+| Tests | **167** passing, CI on Python 3.10 and 3.11 | |
 
-The benchmark selects 63 pairs; 60 of them have both images cached locally and are the ones scored. The 41 classification frames are those whose legend parses to at least two classes, since a single-class frame has nothing to separate.
+**Detection is finished.** The important part is not a single accuracy figure. It is that every image now carries a check on whether its detections can be trusted, before anything is built from them.
 
-Detection is close to finished. Classification works but is still weak, and that is the current focus.
+A frame that reports far more dots than the image contains cannot be accurate, whatever is done downstream. That check needs no labels and no survey data, so it runs on every image. Pass rates were measured on the 63-pair benchmark and applied to the band distribution of all **18,252 screenshots**: about **48% of images pass, and they hold roughly 72% of the corpus's dots — around 2 million annotations.** That is far more than training a DeepForest model needs, so the recovered set is large enough for the next stage to begin. See [Choosing frames](#choosing-frames).
+
+Detection is scored against **hand-labelled dot positions**, not counts. The survey gives a count per image and never a coordinate, so until those labels existed there was no way to tell a pipeline that found the right dots from one that found the right *number* of dots in the wrong places. 541 dots across 8 frames are labelled in `data/labels/` and scored by `scripts/eval_localisation.py`.
+
+Classification is the current focus.
 
 ![project progress](results/report_fig/fig_timeline.jpg)
 
 Each point on the left is a measured change, not a re-tuning. Sparse frames were the worst case throughout: 63.51× over-detection under colour thresholds, 6.07× once the clean original was subtracted, 2.13× after the saturation floor. The dashed line on the right is what the same matching scores when it is tested against templates cut from its own pixels, which is why both numbers are reported.
 
-![what changed](results/report_fig/fig_improvement.jpg)
+![which frames are worth using](results/report_fig/fig_improvement.jpg)
+
+Left: every frame sits under the ceiling its reported count implies, and the ones near 1× sit close to it. Right: the same frames ordered by that ratio, showing recall holding steady while precision splits. Both panels are drawn from `results/eval_localisation.csv` by `scripts/make_improvement_figure.py`, so they cannot fall behind the code.
 
 ## What the data looks like
 
@@ -116,15 +123,36 @@ Dense colonies are the hardest case. Overlapping dots merge into a single blob, 
 
 ![dense colony](results/report_fig/fig_dense.jpg)
 
-Median dots found divided by dots present, closer to 1.0 being better:
+Measured against hand-labelled dot positions, on the frames the pipeline accepts:
 
-| Band | Colour thresholds | Subtraction |
-|---|---|---|
-| sparse (5–50 dots) | 63.51× | **2.13×** |
-| medium (51–300) | 9.15× | **1.24×** |
-| dense (301+) | 3.56× | **1.14×** |
-| **overall median** | **8.40×** | **1.24×** |
-| symmetric \|log₂\| error | 3.07 | **0.53** |
+| frame | dots labelled | precision | recall | placement |
+|---|---|---|---|---|
+| `18May15…00825` | 10 | **1.00** | 1.00 | 0.04px |
+| `19May18…00620` | 186 | **0.82** | 0.81 | 0.02px |
+| `18June21…06389` | 103 | **0.74** | 0.53 | 1.26px |
+
+Recall and placement hold up on every frame, accepted or not: 0.53 to 1.00, and about 1.5px median. What changes between frames is how much of the surroundings is detected alongside the markers, which is what the next section is about.
+
+### Choosing frames
+
+Not every image is worth using, and which ones can be worked out from the image alone.
+
+The check is arithmetic. Correct detections can never outnumber the dots actually on the image, so precision is capped at `dots present / dots reported`. A frame reporting seven times what it should hold cannot exceed 14% precision, however it is filtered afterwards. Nothing about that needs labels.
+
+Verified against hand labels on three frames spanning two density bands and 10 to 186 dots:
+
+| ratio reported / present | precision |
+|---|---|
+| 1.00 | **1.00** |
+| 0.99 | **0.82** |
+| 0.62 | **0.74** |
+| 5.63 | 0.14 |
+| 7.35 | 0.07 |
+| 14.22 | 0.04 |
+
+Applying the benchmark's per-band pass rates to the band distribution of all 18,252 screenshots: **about 48% of images pass, holding roughly 72% of the corpus's dots.**
+
+Frames that fail are mostly sparse scenes over textured ground. A mangrove colony with nine real markers returned 128 detections, because at this resolution a leaf and a marker are the same handful of pixels. Five ways of filtering those out were measured and none separated them; that is written up in [what did not work](#what-did-not-work). Excluding those frames costs little, because sparse images hold only 6% of the corpus's dots.
 
 ### Assigning classes
 
@@ -159,9 +187,10 @@ It is a "No photo coverage for this area" frame. There are no dots on it at all,
 
 ## Limitations
 
-- **Classification is the weak half.** 0.36 agreement on real aerial dots, and it got worse on 14 of 41 frames. When two classes share both a colour and a shape, their templates score almost level and the winner is close to arbitrary. On one frame WHIB site and WHIB bird scored 0.548 against 0.540 on the same dot, and the two labels swapped wholesale.
-- **No per-dot ground truth exists.** Everything above is scored against counts, so a run that assigns every label wrongly can still score well if the group sizes come out right. Roughly 100 hand-labelled aerial dots are the prerequisite for improving classification against a real target.
-- **Sparse frames still over-detect at about 2.13×.** Vegetation texture is one cause and could be filtered by colour. Red label text and transect lines are the other, and they are the same red as the markers, so colour cannot separate them.
+- **Classification is the weak half.** 0.544 per dot. Where two classes share a colour their templates score almost level — WHIB site against WHIB adult scored 0.548 to 0.540 on the same dot — and the labels then swap wholesale. Measured at 19 dots for that pair, plus 7 SNEG and 5 TRHE of the same kind.
+- **The legend does not parse on 12% of frames.** Seven of 60 benchmark frames find no dialog at all, on some of which it is plainly visible. Classification is impossible there whatever the matcher does, and it is also what stands between the frame check and being fully self-contained.
+- **The dense band has no hand labels.** Frame selection is verified on sparse and medium only. Dense holds 55% of the corpus's dots, so this is the first gap to close.
+- **The accepted set skews dense** — 89% of dense frames pass the check against 28% of sparse. A training set built from it will see more crowded scenes than empty ones, and species that only appear on sparse frames will be under-represented.
 - **Count OCR reads about 60–65%** of the Count column. The digits are around 10px tall. Class names read well at full resolution; the counts do not.
 
 ## Repository structure
@@ -231,5 +260,17 @@ Details: [docs/training_analysis.md](docs/training_analysis.md).
 | Species-aware box sizes | Worse, because positions were the real problem |
 | Training on the full dataset | 0 high-confidence detections |
 | Colour filtering during detection | Cut one sparse frame from 129 detections to 1, against a true count of 9 |
+
+Five more were measured against the hand labels, trying to separate real markers from background on the frames that over-detect. None of them worked, and they are recorded so the ground is not covered twice:
+
+| Approach | Result |
+|---|---|
+| Raise the saturation floor | False positives are *more* saturated than true ones, 204 against 178. Moving the floor from 60 to 140 left precision flat at 0.29 and discarded 30% of the real markers. |
+| Minimum blob area | The direction reverses between frames — real markers are larger on three, smaller on two. |
+| Elongation | Real and false medians are both 1.00 on five frames of six. |
+| Legend template match score | Reversed on one frame, where false positives scored 1.000 and real markers 0.218. |
+| A learned filter over all four | Logistic regression with leave-one-frame-out validation gained 0.012 F1 while recall fell from 0.597 to 0.177. Its raw and per-frame-normalised weights take opposite signs, which is what a feature carrying no consistent signal looks like. |
+
+The conclusion is that these frames cannot be cleaned by filtering what has already been detected, which is why the pipeline excludes them instead.
 
 Full list: [docs/learnings.md](docs/learnings.md).

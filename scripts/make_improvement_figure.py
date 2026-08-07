@@ -1,19 +1,17 @@
 """
-What changed, in two panels: detection accuracy and classification accuracy.
+Why some frames are usable and others are not, in two panels.
 
-Both panels compare the same two configurations on the same images, so the
-only difference is the code being measured.
+Both read `results/eval_localisation.csv` at run time, so the figure always shows
+what the pipeline currently does. Nothing here is a stored constant: an earlier
+version of this script hard-coded its numbers, went stale, and a reviewer read
+behaviour that had already been replaced.
 
-Detection  — dots found divided by dots truly present, by density band, over
-             the 60 benchmark pairs. 1.0 is exact; higher means over-detection.
-             Old is colour thresholds, new is subtract-the-clean-original.
-Classification — per-class assigned counts against the counts read from the
-             dialog, averaged over the classes each legend lists. Old runs the
-             previous matching (global colour bins, no background removal,
-             binary-mask cosine, shape-name boost on) via the env toggles in
-             classify.py; new runs the current default. Detection is held
-             constant at the colour path for both, so the panel isolates
-             matching.
+Left   How many dots a frame reports, against how many of them are real. Correct
+       detections cannot outnumber the dots on the image, so precision is capped
+       at 1/ratio. That ceiling is drawn; every frame sits under it by
+       construction, and the useful question is which frames sit close to it.
+Right  Precision and recall per frame, ordered the same way. Recall holds across
+       all of them; precision is what separates.
 
 Usage:
     python scripts/make_improvement_figure.py
@@ -23,8 +21,7 @@ Output: results/report_fig/fig_improvement.jpg
 
 from __future__ import annotations
 
-import os
-import sys
+import csv
 from pathlib import Path
 
 import matplotlib
@@ -34,30 +31,22 @@ import numpy as np
 
 ROOT = Path(__file__).parent.parent
 OUT = ROOT / "results" / "report_fig"
+EVAL = ROOT / "results" / "eval_localisation.csv"
 
-# Categorical slots 1 and 2 of the reference palette. Validated for CVD
-# separation against the light surface (worst adjacent pair dE 24.7 protan).
-C_OLD = "#2a78d6"
-C_NEW = "#eb6834"
+# Categorical slots 1 and 2 of the reference palette. Checked with the palette
+# validator against this surface: worst adjacent pair dE 24.7 protan, 33.6 normal,
+# both above the 8 and 15 floors.
+C_KEEP = "#2a78d6"
+C_DROP = "#eb6834"
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
 INK_2 = "#52514e"
 GRID = "#d8d7d2"
 
-# Detection: median detected/true by band, over the 60 benchmark pairs.
-# Recomputed from results/eval_detection.csv.
-DET = [("sparse\n5-50 dots", 63.51, 2.13),
-       ("medium\n51-300", 9.15, 1.24),
-       ("dense\n301+", 3.56, 1.14)]
-
-# Classification: mean per-class count agreement by band, over the 41 cached
-# frames whose legend parses to at least two classes. Overall 0.263 -> 0.357;
-# 27 frames improved, 14 got worse.
-CLS = [("sparse\n7 frames", 0.223, 0.485),
-       ("medium\n15 frames", 0.273, 0.352),
-       ("dense\n13 frames", 0.266, 0.382)]
-CLS_OVERALL = (0.263, 0.357)
-CLS_SPLIT = (27, 14)
+# A frame is kept when it reports no more than twice the dots present. The bound
+# puts a ceiling of 0.5 on anything beyond that, so there is nothing to recover
+# downstream.
+KEEP_MAX_RATIO = 2.0
 
 
 def _style(ax):
@@ -70,63 +59,119 @@ def _style(ax):
     ax.tick_params(colors=INK_2, labelsize=9, length=0)
 
 
+def load():
+    rows = []
+    with open(EVAL, newline="") as f:
+        for r in csv.DictReader(f):
+            survey = float(r["survey"] or 0)
+            if survey <= 0:
+                continue
+            rows.append(dict(
+                name=r["frame"].replace(".jpg", ""),
+                short=r["frame"].split("-")[-1].replace(".jpg", ""),
+                band=r["band"],
+                ratio=int(r["detected"]) / survey,
+                precision=float(r["precision"]),
+                recall=float(r["recall"]),
+                labels=int(r["labels"]),
+            ))
+    rows.sort(key=lambda d: d["ratio"])
+    return rows
+
+
 def build() -> None:
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.4, 4.9),
-                                   facecolor=SURFACE)
-    h = 0.34            # bar height; the 0.02 gap is the surface spacer
+    rows = load()
+    keep = [d for d in rows if d["ratio"] <= KEEP_MAX_RATIO]
+    drop = [d for d in rows if d["ratio"] > KEEP_MAX_RATIO]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.8, 5.0), facecolor=SURFACE)
     for ax in (ax1, ax2):
         _style(ax)
 
-    # ── Detection ───────────────────────────────────────────────────────
-    y = np.arange(len(DET))
-    old = [d[1] for d in DET]
-    new = [d[2] for d in DET]
-    ax1.barh(y + h / 2 + 0.01, old, h, color=C_OLD, label="colour thresholds")
-    ax1.barh(y - h / 2 - 0.01, new, h, color=C_NEW, label="subtraction")
-    ax1.axvline(1.0, color=INK_2, lw=1.0, ls=(0, (4, 3)), zorder=0)
-    ax1.text(1.06, len(DET) - 0.62, "1.0 = exact", fontsize=8, color=INK_2)
-    for i, (o, n) in enumerate(zip(old, new)):
-        ax1.text(o * 1.12, i + h / 2 + 0.01, f"{o:.2f}x", va="center",
-                 fontsize=9, color=INK_2)
-        ax1.text(n * 1.12, i - h / 2 - 0.01, f"{n:.2f}x", va="center",
-                 fontsize=9, color=INK, fontweight="bold")
-    ax1.set_xscale("log")
-    ax1.set_xlim(0.8, 200)
-    ax1.set_yticks(y, [d[0] for d in DET])
-    ax1.set_xticks([1, 10, 100], ["1x", "10x", "100x"])
-    ax1.grid(axis="x", color=GRID, lw=0.6, zorder=0)
-    ax1.set_axisbelow(True)
-    ax1.set_title("Detection — dots found / dots present\n"
-                  "60 benchmark pairs, median per band. Closer to 1.0 is better.",
-                  fontsize=10, color=INK, loc="left", pad=10)
-    ax1.legend(frameon=False, fontsize=9, loc="upper center",
-               bbox_to_anchor=(0.5, -0.10), ncol=2, labelcolor=INK_2)
+    # ── Left: the ceiling, and where frames sit under it ────────────────
+    x = np.logspace(np.log10(0.4), np.log10(20), 200)
+    ax1.plot(x, np.minimum(1.0, 1.0 / x), color=INK_2, lw=2.0,
+             ls=(0, (5, 3)), zorder=1,
+             label="ceiling: precision cannot exceed 1 / ratio")
+    ax1.axvspan(0.4, KEEP_MAX_RATIO, color=C_KEEP, alpha=0.07, zorder=0)
 
-    # ── Classification ──────────────────────────────────────────────────
-    y = np.arange(len(CLS))
-    old = [c[1] for c in CLS]
-    new = [c[2] for c in CLS]
-    ax2.barh(y + h / 2 + 0.01, old, h, color=C_OLD, label="previous matching")
-    ax2.barh(y - h / 2 - 0.01, new, h, color=C_NEW, label="current matching")
-    for i, (o, n) in enumerate(zip(old, new)):
-        ax2.text(o + 0.012, i + h / 2 + 0.01, f"{o:.2f}", va="center",
-                 fontsize=9, color=INK_2)
-        better = n > o
-        ax2.text(n + 0.012, i - h / 2 - 0.01,
-                 f"{n:.2f}" + ("" if better else "  (down)"), va="center",
-                 fontsize=9, color=INK, fontweight="bold")
-    ax2.set_xlim(0, 0.62)
-    ax2.set_yticks(y, [c[0] for c in CLS])
+    for grp, colour, lab in ((keep, C_KEEP, "kept"), (drop, C_DROP, "dropped")):
+        if not grp:
+            continue
+        ax1.scatter([d["ratio"] for d in grp], [d["precision"] for d in grp],
+                    s=110, color=colour, edgecolor=SURFACE, linewidth=2.0,
+                    zorder=3, label=f"{lab}  ({len(grp)} frames)")
+
+    # Label the kept frames and the single worst; more than that and the panel
+    # stops being readable. Labels hang directly below their point, because every
+    # point lies on or under the ceiling curve, so the space below is always free
+    # and a side-placed label runs into either the curve or the axis.
+    # The kept frames cluster in a small corner, so their labels are placed
+    # individually rather than by one rule: the ceiling falls steeply through
+    # this region and the points sit close enough to catch each other's text.
+    # Lowest ratio goes above its point, the rest hang below or to the left.
+    for i, d in enumerate(keep):
+        if i == 0:                       # lowest ratio: clear space above
+            off, va, ha = (0, 12), "bottom", "center"
+        elif d["precision"] > 0.9:        # top of the panel: go left
+            off, va, ha = (-10, -5), "top", "right"
+        else:
+            off, va, ha = (0, -11), "top", "center"
+        ax1.annotate(f"{d['short']}\n{d['labels']} dots",
+                     (d["ratio"], d["precision"]), textcoords="offset points",
+                     xytext=off, fontsize=8, color=INK_2, va=va, ha=ha)
+    if drop:
+        d = drop[-1]
+        ax1.annotate(f"{d['short']}\n{d['labels']} dots",
+                     (d["ratio"], d["precision"]), textcoords="offset points",
+                     xytext=(0, -11), fontsize=8, color=INK_2,
+                     va="top", ha="center")
+
+    ax1.set_xscale("log")
+    ax1.set_xlim(0.4, 20)
+    ax1.set_ylim(-0.20, 1.08)   # room for a label hanging below the lowest point
+    ax1.set_xticks([0.5, 1, 2, 5, 10, 20],
+                   ["0.5x", "1x", "2x", "5x", "10x", "20x"])
+    ax1.set_xlabel("dots reported / dots present", fontsize=9, color=INK_2)
+    ax1.set_ylabel("measured precision", fontsize=9, color=INK_2)
+    ax1.grid(color=GRID, lw=0.6, zorder=0)
+    ax1.set_axisbelow(True)
+    ax1.set_title("Which frames are worth using\n"
+                  "Reported count is known without labels, so the ceiling is too.",
+                  fontsize=10, color=INK, loc="left", pad=10)
+    ax1.legend(frameon=False, fontsize=8.5, loc="upper right",
+               labelcolor=INK_2)
+
+    # ── Right: precision and recall per frame, same order ───────────────
+    y = np.arange(len(rows))
+    h = 0.34
+    ax2.barh(y + h / 2 + 0.01, [d["recall"] for d in rows], h,
+             color=INK_2, alpha=0.45, label="recall")
+    ax2.barh(y - h / 2 - 0.01, [d["precision"] for d in rows], h,
+             color=[C_KEEP if d["ratio"] <= KEEP_MAX_RATIO else C_DROP
+                    for d in rows])
+    for i, d in enumerate(rows):
+        ax2.text(d["precision"] + 0.015, i - h / 2 - 0.01,
+                 f"{d['precision']:.2f}", va="center", fontsize=8.5,
+                 color=INK, fontweight="bold")
+
+    ax2.set_yticks(y, [f"{d['short']}  ({d['ratio']:.2f}x)" for d in rows],
+                   fontsize=8.5)
+    ax2.set_xlim(0, 1.15)
+    ax2.set_xticks([0, 0.5, 1.0], ["0", "0.5", "1.0"])
     ax2.grid(axis="x", color=GRID, lw=0.6, zorder=0)
     ax2.set_axisbelow(True)
-    mo, mn = CLS_OVERALL
-    up, down = CLS_SPLIT
-    ax2.set_title("Classification — per-class count agreement (higher is better)\n"
-                  f"41 frames, same detection, matching only. "
-                  f"Overall {mo:.2f} to {mn:.2f}; {up} frames up, {down} down.",
+    ax2.set_title("Recall holds everywhere; precision is what splits\n"
+                  f"{sum(d['labels'] for d in rows)} hand-labelled dots, "
+                  f"{len(rows)} frames, ordered by ratio.",
                   fontsize=10, color=INK, loc="left", pad=10)
-    ax2.legend(frameon=False, fontsize=9, loc="upper center",
-               bbox_to_anchor=(0.5, -0.10), ncol=2, labelcolor=INK_2)
+    # Precision bars take the frame's own kept/dropped colour, so the legend has
+    # to name both rather than show one swatch that half the bars contradict.
+    from matplotlib.patches import Patch
+    ax2.legend(handles=[Patch(facecolor=INK_2, alpha=0.45, label="recall"),
+                        Patch(facecolor=C_KEEP, label="precision, kept"),
+                        Patch(facecolor=C_DROP, label="precision, dropped")],
+               frameon=False, fontsize=8.5, loc="lower right", labelcolor=INK_2)
 
     fig.tight_layout()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -134,8 +179,15 @@ def build() -> None:
     fig.savefig(out, dpi=140, bbox_inches="tight", facecolor=SURFACE,
                 pil_kwargs={"quality": 88})
     plt.close(fig)
-    print(f"wrote {out} ({out.stat().st_size // 1024} KB)  "
-          f"classification mean {mo:.3f} -> {mn:.3f}")
+
+    kp = [d["precision"] for d in keep]
+    print(f"wrote {out} ({out.stat().st_size // 1024} KB)")
+    print(f"  {len(rows)} frames, {sum(d['labels'] for d in rows)} labelled dots")
+    if kp:
+        print(f"  kept {len(keep)}: precision {min(kp):.2f}-{max(kp):.2f}")
+    if drop:
+        dp = [d["precision"] for d in drop]
+        print(f"  dropped {len(drop)}: precision {min(dp):.2f}-{max(dp):.2f}")
 
 
 if __name__ == "__main__":
