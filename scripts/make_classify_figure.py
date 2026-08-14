@@ -81,6 +81,46 @@ def _patch(rgb: np.ndarray, d, half: int = 22) -> np.ndarray | None:
     return rgb[y0:y1, x0:x1]
 
 
+def _verdicts(shot_path: Path | None, dots, entries, tol: float = 5.0) -> dict:
+    """
+    For each detection, whether the hand label at that point agrees with the class it
+    was given: `right`, `wrong`, or absent when no label sits there.
+
+    Without this the figure shows only what the pipeline decided, and a row can look
+    convincing while being wrong. On `5745` the two rows holding the fewest dots each
+    match the dialog's stated count exactly and are wrong on every dot — a reader
+    seeing counts agree would conclude the opposite.
+
+    Returns `{id(dot): verdict}`, empty when the frame has no labels.
+    """
+    if shot_path is None:
+        return {}
+    path = ROOT / "data" / "labels" / (shot_path.stem + ".json")
+    if not path.exists():
+        return {}
+    import json
+    lab = json.load(open(path))
+    xy = [(d["x"], d["y"]) for d in lab["dots"]]
+    rows = [d.get("row") for d in lab["dots"]]
+    if not any(r is not None for r in rows):
+        return {}
+
+    pairs = sorted(((np.hypot(d.cx - tx, d.cy - ty), i, j)
+                    for i, d in enumerate(dots)
+                    for j, (tx, ty) in enumerate(xy)
+                    if abs(d.cx - tx) <= tol and abs(d.cy - ty) <= tol),
+                   key=lambda t: t[0])
+    used_d, used_t, out = set(), set(), {}
+    for _dist, i, j in pairs:
+        if i in used_d or j in used_t:
+            continue
+        used_d.add(i); used_t.add(j)
+        if rows[j] is None:
+            continue
+        out[id(dots[i])] = "right" if dots[i].legend_row == rows[j] else "wrong"
+    return out
+
+
 def build(key: str, pair: str | None, n_rows: int, n_samples: int) -> None:
     if pair:
         found = _find_pair(pair)
@@ -113,6 +153,7 @@ def build(key: str, pair: str | None, n_rows: int, n_samples: int) -> None:
         dots = detect_dots(rgb, exclude=bbox)
 
     assign_classes(dots, entries)
+    verdicts = _verdicts(shot_path, dots, entries)
 
     # Group by assigned class, largest first, same ordering the old figure used.
     by_entry: dict[int, list] = {}
@@ -128,8 +169,14 @@ def build(key: str, pair: str | None, n_rows: int, n_samples: int) -> None:
         raise SystemExit("no dots were assigned to any class")
 
     n_cols = 2 + n_samples
+    # The title and the column headings need a fixed band whatever the row count.
+    # Without it a frame with only two populated classes draws the title straight
+    # over the headings. The band grows with the title, which gains a line once
+    # hand labels are available to score against.
+    header_in = 1.5 + (0.32 if verdicts else 0.0)
     fig, axes = plt.subplots(len(order), n_cols,
-                             figsize=(1.28 * n_cols, 1.28 * len(order)))
+                             figsize=(1.28 * n_cols,
+                                      1.28 * len(order) + header_in))
     if len(order) == 1:
         axes = axes[None, :]
 
@@ -162,22 +209,44 @@ def build(key: str, pair: str | None, n_rows: int, n_samples: int) -> None:
                 continue
             ax.imshow(p)
             h, w = p.shape[:2]
-            ax.add_patch(plt.Circle((w / 2, h / 2), min(h, w) * 0.30,
-                                    fill=False, color="white", lw=1.1))
+            colour = {"right": "#2e9e4f", "wrong": "#d2342b"}.get(
+                verdicts.get(id(pick[c])), "white")
+            # Tight enough to pick out one marker. A wider ring covers its
+            # neighbours too, and in a colony that leaves the reader unable to
+            # tell which dot the verdict belongs to.
+            ax.add_patch(plt.Circle((w / 2, h / 2), min(h, w) * 0.18,
+                                    fill=False, color=colour, lw=1.5))
 
     axes[0, 0].set_title("dialog\nmarker", fontsize=8)
     axes[0, 1].set_title("template\n(24x24)", fontsize=8)
-    axes[0, 2].set_title("sample aerial patches assigned to this class "
-                         "(white ring = matched point)",
-                         fontsize=8, loc="left")
+    checked = any(v in ("right", "wrong") for v in verdicts.values())
+    axes[0, 2].set_title(
+        "sample aerial patches assigned to this class   "
+        + ("green ring = a hand label at that point agrees, red = it disagrees, "
+           "white = no hand label there" if checked
+           else "white ring = matched point"),
+        fontsize=8, loc="left")
 
     total = sum(len(v) for v in by_entry.values())
+    third = ""
+    if checked:
+        right = sum(1 for d in dots if verdicts.get(id(d)) == "right")
+        wrong = sum(1 for d in dots if verdicts.get(id(d)) == "wrong")
+        blank = len(dots) - right - wrong
+        # Hand labelling is not exhaustive, and detection also finds things that are
+        # not markers, so an unringed patch is unverified rather than wrong. Stating
+        # the split stops a reader reading every white ring as an error.
+        third = (f"\nover all {len(dots)} detections on this frame: {right} agree with "
+                 f"a hand label, {wrong} disagree, {blank} have no label "
+                 f"({blank / max(len(dots), 1):.0%})")
     fig.suptitle(
         f"Classification — current pipeline   ·   {shot_path.name}\n"
         f"Lab colour anchoring + hue background removal + NCC shape match, no shape-name boost"
-        f"   ·   detection: {mode}   ·   {total} dots assigned across {len(by_entry)} classes",
-        fontsize=10.5, y=1.005)
-    fig.tight_layout()
+        f"   ·   detection: {mode}   ·   {total} dots assigned across {len(by_entry)} classes"
+        + third,
+        fontsize=10.5)
+    # Leave the reserved band free instead of letting tight_layout reclaim it.
+    fig.tight_layout(rect=(0, 0, 1, 1 - header_in / fig.get_figheight()))
 
     OUT.mkdir(parents=True, exist_ok=True)
     out = OUT / f"fig_classify_{key}.jpg"
@@ -190,10 +259,15 @@ def build(key: str, pair: str | None, n_rows: int, n_samples: int) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--key", default="D_raccoon_2011")
+    ap.add_argument("--key", default=None,
+                    help="output name. Defaults to the frame given by --pair, so the "
+                         "file is named after what it shows; falls back to the old "
+                         "four-study-image key when no pair is given.")
     ap.add_argument("--pair", default=None,
                     help="benchmark frame name; enables the subtraction path")
     ap.add_argument("--rows", type=int, default=7)
     ap.add_argument("--samples", type=int, default=6)
     args = ap.parse_args()
-    build(args.key, args.pair, args.rows, args.samples)
+    key = args.key or (os.path.splitext(args.pair)[0] if args.pair
+                       else "D_raccoon_2011")
+    build(key, args.pair, args.rows, args.samples)
