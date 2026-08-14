@@ -19,18 +19,20 @@ The pipeline runs from the images alone. Survey counts are never an input; the C
 | | Measured | On |
 |---|---|---|
 | Registration success | **96.7%**, 0.38px median reprojection error | 60 pairs |
-| Detection precision, on frames the pipeline accepts | **0.74–1.00** | 541 hand-labelled dots |
-| Dot placement error | **~1.5px** median | 541 hand-labelled dots |
-| Classification, per dot | **0.544** | 215 matched dots |
-| Tests | **167** passing, CI on Python 3.10 and 3.11 | |
+| Detection precision, on frames the pipeline accepts | **0.30–1.00** per frame | 7 hand-labelled frames |
+| Dot placement error | **0.65px** median | 1,648 hand-labelled dots |
+| Classification, per dot | **0.781** | 885 matched dots, 7 frames |
+| Tests | **211** passing, CI on Python 3.10 and 3.11 | |
 
 **Detection is finished.** The important part is not a single accuracy figure. It is that every image now carries a check on whether its detections can be trusted, before anything is built from them.
 
 A frame that reports far more dots than the image contains cannot be accurate, whatever is done downstream. That check needs no labels and no survey data, so it runs on every image. Pass rates were measured on the 63-pair benchmark and applied to the band distribution of all **18,252 screenshots**: about **48% of images pass, and they hold roughly 72% of the corpus's dots — around 2 million annotations.** That is far more than training a DeepForest model needs, so the recovered set is large enough for the next stage to begin. See [Choosing frames](#choosing-frames).
 
-Detection is scored against **hand-labelled dot positions**, not counts. The survey gives a count per image and never a coordinate, so until those labels existed there was no way to tell a pipeline that found the right dots from one that found the right *number* of dots in the wrong places. 541 dots across 8 frames are labelled in `data/labels/` and scored by `scripts/eval_localisation.py`.
+Both stages are scored against **hand-labelled dot positions**, not counts. The survey gives a count per image and never a coordinate, so until those labels existed there was no way to tell a pipeline that found the right dots from one that found the right *number* of dots in the wrong places. 1,648 dots across 12 frames are labelled in `data/labels/` and scored by `scripts/eval_localisation.py`.
 
-Classification is the current focus.
+The classification figure quotes seven of those twelve: the frames that both pass the check above and carry a class per dot. Quoting all twelve would mix in five frames the pipeline rejects, which measures a configuration nobody runs.
+
+Mapping the dots onto the original photograph and exporting the DeepForest CSV are next. Those two steps are what turn the recovered dots into deliverable #2.
 
 ![project progress](results/report_fig/fig_timeline.jpg)
 
@@ -123,21 +125,29 @@ Dense colonies are the hardest case. Overlapping dots merge into a single blob, 
 
 ![dense colony](results/report_fig/fig_dense.jpg)
 
-Measured against hand-labelled dot positions, on the frames the pipeline accepts:
+Measured against hand-labelled dot positions, on the seven accepted frames that carry labels:
 
-| frame | dots labelled | precision | recall | placement |
-|---|---|---|---|---|
-| `18May15…00825` | 10 | **1.00** | 1.00 | 0.04px |
-| `19May18…00620` | 186 | **0.82** | 0.81 | 0.02px |
-| `18June21…06389` | 103 | **0.74** | 0.53 | 1.26px |
+| frame | dots labelled | precision | recall |
+|---|---|---|---|
+| `18May15…00825` | 10 | **1.00** | 1.00 |
+| `17May10…5745` | 372 | **0.76** | 0.79 |
+| `18June21…06389` | 103 | **0.74** | 0.53 |
+| `19May18…00620` | 178 | **0.72** | 0.74 |
+| `18May11…0027` | 335 | 0.46 | 0.63 |
+| `18May15…426` | 193 | 0.42 | 0.51 |
+| `27May12…0449` | 215 | 0.30 | 0.40 |
 
-Recall and placement hold up on every frame, accepted or not: 0.53 to 1.00, and about 1.5px median. What changes between frames is how much of the surroundings is detected alongside the markers, which is what the next section is about.
+Median placement error is **0.65px** across all of them. Placement holds everywhere; what changes between frames is how much of the surroundings is detected alongside the markers.
+
+Most of that loss is map ink. On `0027` a painted transect line runs the width of the frame and is detected along its length, and on `06389` the painted words "Rabbit Area" are detected as markers. Both are drawn in the same palette colours as the dots, so colour cannot separate them. Geometry could: a line is collinear and text is a regular run of characters. That is written up in [what did not work](#what-did-not-work), because the one filter tried for it removed real birds.
 
 ### Choosing frames
 
 Not every image is worth using, and which ones can be worked out from the image alone.
 
-The check is arithmetic. Correct detections can never outnumber the dots actually on the image, so precision is capped at `dots present / dots reported`. A frame reporting seven times what it should hold cannot exceed 14% precision, however it is filtered afterwards. Nothing about that needs labels.
+The check is arithmetic, and it lives in `src/select.py`. Correct detections can never outnumber the dots actually on the image, so precision is capped at `dots present / dots reported`. A frame reporting seven times what it should hold cannot exceed 14% precision, however it is filtered afterwards. Nothing about that needs labels.
+
+The band has to be two-sided. Under-detection is equally disqualifying, and a frame returning a single detection for 19 dots passed a one-sided cut while being useless. One quality target sets both edges: `q ≤ ratio ≤ 1/q`, with `q = 0.6`.
 
 Verified against hand labels on three frames spanning two density bands and 10 to 186 dots:
 
@@ -156,20 +166,39 @@ Frames that fail are mostly sparse scenes over textured ground. A mangrove colon
 
 ### Assigning classes
 
-`classify.py` has to separate classes that share a colour, such as BRPE nest, bird and chick, all drawn in red. Each dot is matched to the colours that image's dialog actually uses, in Lab space, then matched by normalised cross-correlation against the templates cut from the dialog rows of that colour.
+`classify.py` has to separate classes that share a colour, such as BRPE nest, bird and chick, all drawn in red. **The class identity is the legend row, not the name read off it** — one dialog carries two rows that both OCR as `ad`, and keying on the name merges them.
 
-![classification](results/report_fig/fig_classify.jpg)
+Four steps decide where a dot goes.
 
-Each row shows the dialog marker, the template cut from it, and six aerial patches picked at random from everything assigned to that class. The figure is generated by `scripts/make_classify_figure.py` from the live pipeline, so it always shows current behaviour.
+**Colour picks the candidate rows**, using the palette that image's own dialog uses, in Lab space. A legend glyph is drawn crisply on a white table cell; the same marker in the aerial is a few pixels of thin stroke over vegetation at a quarter of the resolution, so its measured colour drifts. That drift is corrected **per row, not per frame**. On `5745` the frame-wide median difference is `a = −12.5` while row 0 needs `−29.4` and row 2 needs `−11.0`. The glyph explains it: a thin asterisk mixes with whatever it sits on, where a filled circle keeps its own colour. On `00620` two rows of the same species and the same colour need `L = −84` and `L = −16`.
 
-One caveat to read it correctly: this frame is a legacy fixture with no clean original beside it, so **detection here is the colour path, not subtraction**, which the figure's own title strip records. The bottom rows are the rare classes, and their patches are red map text and bare vegetation. Those are detection false positives reaching the matcher rather than matching errors, and subtraction removes most of them on frames that have an original to subtract.
+**A template match ranks them.** Normalised cross-correlation against the 24×24 template cut from each candidate row, with colour agreement folded into the score, so a dot sitting on a row's colour outranks one that barely reached the margin.
 
-Two measurements disagree, and both are reported:
+**Each row is limited to the Count the dialog states.** A dot whose best row is full goes to its next best row instead; a dot with no candidate row left is scored again against every row that still has space. Without this, populous `site` rows stay half empty while empty `bird` rows fill up, which is a label swap that per-class counts cannot see.
 
-- **Legend self-recovery, 76–83%.** A legend glyph is shrunk to aerial scale and pushed back through matching to see whether it recovers its own class. This flatters the method, because the template and the test glyph come from the same pixels.
-- **Per-class count agreement on real aerial dots, 0.36.** Assigned counts per class compared against the counts read from the dialog, over 41 frames. Previous matching scored 0.26.
+**A dot matching no row keeps no class.** That is the valid/invalid split Josh asked about, and the pipeline already makes it.
 
-Both numbers appear here so that neither is mistaken for the other. The gap between them is how much of the 76–83% comes from testing the method against glyphs cut from its own templates.
+![classification](results/report_fig/fig_classify_17May10Camera2-Card1-5745.jpg)
+
+Each row shows the dialog's own marker, the template cut from it, and six aerial patches drawn at random from everything assigned to that class. `scripts/make_classify_figure.py` generates it from the live pipeline, so it always shows current behaviour, and the title strip records which detection path ran.
+
+The rings carry the verdict. Green means a hand label at that point agrees with the class the pipeline gave; red means it disagrees; white means no label sits there. **White is not evidence of an error.** Hand labelling is not exhaustive — 90 of this frame's 386 detections have no label — so an unringed patch is unverified rather than wrong.
+
+Read that way, the figure says two things at once. The populous rows are right: `WHIB site` at 84 dots and `WHEG site` at 40 are green almost throughout, and the white rings among them sit on markers identical to the green ones. The two rows holding two dots each are wrong on every dot, and **both of them match the dialog's stated count exactly**. That is the clearest argument in the repository for why counts prove nothing about labels.
+
+The whole frame, with every detected dot drawn in the colour of the class it was given, beside what the dialog states, what the pipeline assigned, and what the labels say:
+
+![the frame classified](results/figures/fig_classify_17May10Camera2-Card1-5745.jpg)
+
+`LAGU sit` reads 150 in the dialog, 148 from the pipeline and 139 by hand; `ROSP site` 62, 62 and 60; `WHEG site` 40, 40 and 40. The 19 dots with no class are mostly ink that is not a marker.
+
+Per-dot accuracy, on the seven frames that both pass frame selection and carry a class per dot:
+
+![accuracy per frame](results/figures/fig_accuracy_by_frame.png)
+
+**0.781 over 885 dots.** Dropping `0449`, where the dialog's counts are misread, gives 0.842. `06389` reads 1.000 because it has two classes, which is worth saying rather than quoting.
+
+One older measurement is kept here so neither is mistaken for the other. **Legend self-recovery scores 76–83%**: a legend glyph is shrunk to aerial scale and pushed back through matching to see whether it recovers its own class. That flatters the method, because the template and the test glyph come from the same pixels. The gap to 0.781 is how much of it comes from testing the method against itself.
 
 ## The benchmark
 
@@ -187,11 +216,12 @@ It is a "No photo coverage for this area" frame. There are no dots on it at all,
 
 ## Limitations
 
-- **Classification is the weak half.** 0.544 per dot. Where two classes share a colour their templates score almost level — WHIB site against WHIB adult scored 0.548 to 0.540 on the same dot — and the labels then swap wholesale. Measured at 19 dots for that pair, plus 7 SNEG and 5 TRHE of the same kind.
-- **The legend does not parse on 12% of frames.** Seven of 60 benchmark frames find no dialog at all, on some of which it is plainly visible. Classification is impossible there whatever the matcher does, and it is also what stands between the frame check and being fully self-contained.
-- **The dense band has no hand labels.** Frame selection is verified on sparse and medium only. Dense holds 55% of the corpus's dots, so this is the first gap to close.
+- **The Count column is read from the wrong place on 14 of the 25 frames.** `attach_class_names` takes the second table gridline as the Name|Count divider. On `0449` the gridlines are `[8, 110, 195, 315]` and the marker sits at x=122, so that second line falls to the *left* of the marker and the strip read as the Count column is really the Name column. The dialog plainly reads 93, 70, 11, 23, 10 and the parser returns 3, None, 0, 0, 0. A misread `0` does more damage than no count, because zero blocks a row entirely: 66 of that frame's 83 labelled dots end up unassigned and it scores 0.193 against 0.781 pooled. Two attempts to fix it both broke classification and both were reverted, which is written up in [what did not work](#what-did-not-work).
+- **A class holding only a handful of dots is unreliable.** On `5745` the two rows with two dots each are wrong on every dot, while the rows with 40 and more are right almost throughout.
+- **Map ink is detected as markers.** Painted transect lines and area labels use the same palette colours as the dots. On `0027` this costs about half the precision.
+- **Only 4 of the 25 frames reaching classification had labels until recently**, and 21 still have none. What can be checked on the rest is a per-species tally against the survey manifest, which the pipeline never reads. That check ranks frames correctly but reads high: it predicted 1.000, 0.995 and 0.403 for three frames that then measured 0.877, 0.730 and 0.193 by hand.
 - **The accepted set skews dense** — 89% of dense frames pass the check against 28% of sparse. A training set built from it will see more crowded scenes than empty ones, and species that only appear on sparse frames will be under-represented.
-- **Count OCR reads about 60–65%** of the Count column. The digits are around 10px tall. Class names read well at full resolution; the counts do not.
+- **Three of the 28 frames with a dialog have the box in the wrong place**, and they are excluded by name. Six automatic tests were measured to separate them and every one overlaps.
 
 ## Repository structure
 
@@ -199,9 +229,11 @@ It is a "No photo coverage for this area" frame. There are no dots on it at all,
 src/legend.py       find the dialog, parse each row to marker, colour, shape, template, class, count
 src/align.py        register the clean original onto the screenshot
 src/subtract.py     annotations as image difference; turn ink into dot candidates
-src/classify.py     Lab colour anchoring, then NCC shape matching within a colour
+src/select.py       which frames to trust, from the reported-to-detected ratio alone
+src/classify.py     Lab colour anchoring per row, NCC shape matching, capacity per class
 scripts/            benchmark builders, evaluation harnesses, figure generators
-tests/              166 tests
+tests/              211 tests
+data/labels/        1,648 hand-labelled dots across 12 frames
 notebook/           the earlier Colab prototype, stages 3 to 7
 docs/learnings.md   what went wrong and why
 ```
@@ -214,12 +246,22 @@ docs/learnings.md   what went wrong and why
 pip install -r requirements.txt          # full
 pip install pytest numpy opencv-python scikit-image PyYAML scipy   # tests only
 
-pytest tests/ -q                         # 166 passing
+pytest tests/ -q                         # 211 passing
 
 python scripts/build_manifest.py         # survey counts, ~1.4 MB
 python scripts/build_benchmark.py --per-cell 3   # the 63 pairs, ~472 MB
-python scripts/eval_detection.py         # old vs new vs category_sum
+python scripts/eval_localisation.py      # per-dot precision, recall, placement, class
 python scripts/eval_alignment.py         # registration success rate
+```
+
+`eval_localisation.py` is the gate. `eval_detection.py` compares counts, and a count
+cannot see whether a dot sits on a marker.
+
+To redraw the figures in this file:
+
+```bash
+python scripts/make_classification_figures.py
+python scripts/make_classify_figure.py --pair 17May10Camera2-Card1-5745.jpg --rows 8
 ```
 
 The tests need no data and no network; the fixtures they use are in the repo. Everything below `pytest` downloads from a public bucket, so no credentials are involved, but the pairs are large because the clean originals are about 7 MB each. `build_benchmark.py --dry-run` prints the selection and the download size without fetching anything. Both scripts cache, so an interrupted run can be repeated.
@@ -272,5 +314,15 @@ Five more were measured against the hand labels, trying to separate real markers
 | A learned filter over all four | Logistic regression with leave-one-frame-out validation gained 0.012 F1 while recall fell from 0.597 to 0.177. Its raw and per-frame-normalised weights take opposite signs, which is what a feature carrying no consistent signal looks like. |
 
 The conclusion is that these frames cannot be cleaned by filtering what has already been detected, which is why the pipeline excludes them instead.
+
+Five more were measured while building the classification stage:
+
+| Approach | Result |
+|---|---|
+| Read the dialog's own **Total Count** and use it as a budget | Correct on 11 of 25 frames, absent on 8, OCR noise on 6. Where it reads it is accurate, and 11 of 25 is too thin to cap classes with. |
+| Give **every** row with an unreadable count a capacity of zero | Recovers the frame it was built for and destroys frames whose Count column barely reads. One went from 0.516 to 0.065. Only rows parsed *below* the last counted row are safe to zero. |
+| Discard a per-row colour offset that looks contaminated by a neighbouring row | Saved one dot on one frame and cost six on another. Pooled 0.789 to 0.779. A wrong offset only ever adds a candidate, and the template score handles it. |
+| Let the species matcher accept two edits instead of one | `nest` becomes the species code `BNST`. Coverage bought with a wrong species is a regression. |
+| Take the Name\|Count divider from the first gridline right of the marker | The geometry is right and the fix broke classification twice, 0.861 to 0.634 and 0.861 to 0.600. Moving the name boundary changes the parsed `class_name`, and row identity is keyed on that. It is a classification change wearing a legend-parsing disguise, and it has to be scored on `eval_localisation.py` rather than on name coverage. |
 
 Full list: [docs/learnings.md](docs/learnings.md).
