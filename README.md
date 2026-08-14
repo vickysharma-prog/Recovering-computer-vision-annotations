@@ -214,15 +214,6 @@ One dense frame looked like a bad regression, 450 dots down to 9. Opening it sho
 
 It is a "No photo coverage for this area" frame. There are no dots on it at all, only survey polygons and a text box. Its `category_sum` of 450 is a written estimate. The old detector scored 288 by counting polygon lines.
 
-## Limitations
-
-- **The Count column is read from the wrong place on 14 of the 25 frames.** `attach_class_names` takes the second table gridline as the Name|Count divider. On `0449` the gridlines are `[8, 110, 195, 315]` and the marker sits at x=122, so that second line falls to the *left* of the marker and the strip read as the Count column is really the Name column. The dialog plainly reads 93, 70, 11, 23, 10 and the parser returns 3, None, 0, 0, 0. A misread `0` does more damage than no count, because zero blocks a row entirely: 66 of that frame's 83 labelled dots end up unassigned and it scores 0.193 against 0.781 pooled. Two attempts to fix it both broke classification and both were reverted, which is written up in [what did not work](#what-did-not-work).
-- **A class holding only a handful of dots is unreliable.** On `5745` the two rows with two dots each are wrong on every dot, while the rows with 40 and more are right almost throughout.
-- **Map ink is detected as markers.** Painted transect lines and area labels use the same palette colours as the dots. On `0027` this costs about half the precision.
-- **Only 4 of the 25 frames reaching classification had labels until recently**, and 21 still have none. What can be checked on the rest is a per-species tally against the survey manifest, which the pipeline never reads. That check ranks frames correctly but reads high: it predicted 1.000, 0.995 and 0.403 for three frames that then measured 0.877, 0.730 and 0.193 by hand.
-- **The accepted set skews dense** — 89% of dense frames pass the check against 28% of sparse. A training set built from it will see more crowded scenes than empty ones, and species that only appear on sparse frames will be under-represented.
-- **Three of the 28 frames with a dialog have the box in the wrong place**, and they are excluded by name. Six automatic tests were measured to separate them and every one overlaps.
-
 ## Repository structure
 
 ```
