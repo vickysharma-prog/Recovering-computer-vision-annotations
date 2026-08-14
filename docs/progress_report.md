@@ -4,7 +4,7 @@
 **Contributor:** Vicky Sharma
 **Mentor:** Josh Veitch-Michaelis
 **Repo:** github.com/vickysharma-prog/Recovering-computer-vision-annotations
-**Last updated:** 2026-08-07 (first hand-labelled dot set, 345 dots on 6 frames; detection measured per-dot for the first time; marker-size estimator diagnosed and parked)
+**Last updated:** 2026-08-14 (classification built out and measured against 1,648 hand-labelled dots; frame selection put in code; five changes shipped and five reverted)
 
 > **READ THIS FIRST: three earlier claims in this document have been retracted.**
 > They are left in place with correction notes rather than deleted, because the
@@ -22,18 +22,16 @@
 >    answers a different question, and the two failure modes behind it cancel
 >    inside a median. See *Hand-Labelled Measurement*.
 >
-> Current state in one line: **detection is the weak half, and until 2026-08-07 it
-> had never been measured.** Alignment 96.7%. Count ratio 8.40x -> 1.24x median, but
-> per dot the same pipeline scores **P 0.138 / R 0.345 / F1 0.197** over 345
-> hand-labelled dots. **Placement is not the problem** (1.83px median error);
-> finding markers is. Classification measures **0.373 per dot**, against the 0.36
-> count proxy previously quoted. `main` is at PR #7, CI green, **166 tests** pass and
-> `src/` is unchanged by this session.
+> Current state in one line: **both halves of deliverable #1 are measured against
+> hand-labelled dots.** Alignment 96.7% at 0.38px. Detection, per frame on the seven
+> frames that pass selection and carry labels: precision 0.30–1.00, recall 0.40–1.00,
+> placement **0.65px** median. Classification **0.781 per dot** over 885 dots on those
+> same seven frames, 0.842 without the one frame whose dialog counts are misread.
+> Ground truth is now **1,648 dots across 12 frames**. **211 tests** pass.
 >
-> Next work starts from `main`, on **sparse and medium frames only** (65% of the
-> corpus has fewer than 100 birds): give sparse precision, give medium recall, and
-> re-derive the `dot_candidates` band constants against the labels. The dense band
-> is deliberately untouched because it has **zero** hand labels so far.
+> Next is deliverable #2: map the dots onto the original photograph, export the
+> DeepForest CSV, and train. Fine-tuning waits for the training run, because box size
+> and the precision the model actually needs cannot be settled by argument.
 
 ---
 
@@ -1399,6 +1397,68 @@ because the dialog-cropping root cause it uncovered was real and is fixed.
 
 ---
 
+## Session 2026-08-14: building out classification
+
+Detection was finished going in and did not move: precision, recall and placement were
+re-checked after every change and read the same each time. All of the work below is in
+`classify.py`, `legend.py` and `select.py`.
+
+### What shipped
+
+| | | per-dot accuracy |
+|---|---|---|
+| Class identity keyed on the **legend row** rather than the OCR'd name | one dialog carries two rows that both read `ad` | a metric correction, and nothing else could be measured without it |
+| `src/select.py` | the frame-selection rule existed only in prose, and was one-sided | two-sided band, 10 tests |
+| Capacity from the dialog's own Count column | the legend said `ROSP bird = 0` and the pipeline put 76 dots there | 0.443 → 0.696 |
+| Per-frame lightness correction | a legend glyph reads L=243 where the same marker in the aerial is far darker, so 152 of 183 dots on one frame were rejected before classification | 0.555 → 0.717 |
+| Sole-candidate dots no longer score a flat 1.0 | having one candidate says the legend holds one class of that colour, not that the dot is a good marker. Measured: those dots are 69% real against 80% for contested ones | 0.717 → 0.725 |
+| Rows parsed below the table are capped | a row landing on the scrollbar or on the photograph below the dialog had no readable count, so it was unlimited, and two such rows took 49 detections | 0.725 → 0.766 |
+| Colour offsets measured **per row** | the drift from legend glyph to aerial marker follows the glyph, not the frame: one frame needs `a = −29.4` on one row and `−11.0` on another | 0.766 → 0.789 |
+| Colour ranks as well as gates | a dot on a row's colour and one that scraped into the margin used to compete as equals | 0.789 → 0.828 |
+| Blocked dots retried against any row still free | 25 dots on one frame had a single candidate row that the dialog genuinely counts as zero | 0.828 → 0.850 |
+| Count sanity bound: a row cannot hold more dots than the frame has detections | correct, and worth keeping, and it changed nothing. An inflated cap never binds, so treating it as unread has the same effect | 0.850 → 0.850 |
+| Species matcher accepts a 3-letter token | OCR drops the leading character, and `RPE` never reached the matcher | species resolution 0.720 → 0.771 |
+
+Tests 190 → 211.
+
+### What was reverted, and why
+
+Five ideas were measured and dropped. They are in `docs/learnings.md` #37–#49 and in the
+README's *what did not work*, so the ground is not covered twice.
+
+The one worth repeating here: **taking the Name|Count divider from the first gridline
+right of the marker is the correct geometry, and it breaks classification.** The current
+code takes `gridlines[1]`, which is wrong on 14 of the 25 frames — on one, the divider
+lands left of the marker and the strip read as the Count column is really the Name column,
+so a dialog plainly showing 93, 70, 11, 23 comes back as 3, None, 0, 0. That frame scores
+0.193. The fix improved species resolution 0.771 → 0.858 and dropped a good frame from
+0.861 to 0.634, then to 0.600 on a second attempt that moved the two strips separately.
+Moving the name boundary changes the parsed `class_name`, and row identity is keyed on
+that. It is a classification change wearing a legend-parsing disguise.
+
+### Ground truth
+
+743 dots were labelled during the session, bringing the set to **1,648 dots across 12
+frames**. The three new frames were chosen to test the label-free proxy rather than to
+add volume: the survey cross-check predicted 1.000, 0.995 and 0.403 for them, and they
+measured 0.877, 0.730 and 0.193 by hand. The ranking holds and the values read high, so
+the proxy can say which frames are weak but not how weak.
+
+**Per-dot accuracy went 0.850 to 0.781 when those three frames joined.** The pipeline did
+not change between the two readings; the first covered four frames and the second seven.
+
+### Figures
+
+`scripts/make_classification_figures.py` is new and `scripts/make_classify_figure.py` was
+extended. Both run the live pipeline. The per-class figure now rings each sample patch
+green where a hand label agrees with the assigned class, red where it disagrees, and white
+where no label sits there, with the frame's whole split printed in the title.
+
+That ring exposed something counts hide. On the showcase frame, the two legend rows
+holding two dots each match the dialog's stated count exactly and are wrong on every dot.
+
+---
+
 ## How to Resume
 
 ```bash
@@ -1411,20 +1471,25 @@ python scripts/eval_detection.py        # counts, old vs new, vs category_sum
 python scripts/eval_alignment.py        # registration success rate
 
 # 3. The real gate: per-dot, against the hand labels in data/labels/
-python scripts/eval_localisation.py     # P 0.138 / R 0.345 / F1 0.197 / 1.83px
+python scripts/eval_localisation.py     # placement 0.65px, classification 0.781
 
-# 4. More labels (dense band has none yet)
-python scripts/label_dots.py --frames 10 --blind 2
-# open results/labelling/*.html, label, press S, save into data/labels/
+# 4. More labels
+python scripts/label_dots.py --only <frame>.jpg --blind 0
+# open results/labelling/*.html, label, press S; the browser saves to Downloads,
+# so copy the JSON into data/labels/ afterwards
 
-# 5. Tests
-pytest tests/ -q                        # 166 passing
+# 5. Figures, from the live pipeline
+python scripts/make_classification_figures.py
+python scripts/make_classify_figure.py --pair 17May10Camera2-Card1-5745.jpg --rows 8
+
+# 6. Tests
+pytest tests/ -q                        # 211 passing
 ```
 
-**Score detection changes with `eval_localisation.py`, not `eval_detection.py`.**
-The count metric cannot see whether a dot sits on a marker, and it reads 1.24x on a
-pipeline whose actual precision is 0.138. Keep the count run for the broader 60-frame
-coverage, but do not let it decide anything.
+**Score changes with `eval_localisation.py`, not `eval_detection.py`.** The count metric
+cannot see whether a dot sits on a marker. Read three things from its output, in order:
+detection precision and recall must be unchanged; classification is the seven selected
+frames, not the pooled twelve; and no individual frame may fall.
 
 **Ground rules that must not be broken** (each was learned the hard way):
 1. The pipeline works from the **image alone**: the screenshot and its paired

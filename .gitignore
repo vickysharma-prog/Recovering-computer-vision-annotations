@@ -241,8 +241,10 @@ docs/~$*
 scripts/eval_shape_naming.py
 results/shape_naming/
 
-# Extra classification figures from picking a demo frame (only fig_classify.jpg ships)
+# Per-frame classification figures are working output from trying demo frames. The
+# README embeds one of them, so that one ships and the rest stay local.
 results/report_fig/fig_classify_*.jpg
+!results/report_fig/fig_classify_17May10Camera2-Card1-5745.jpg
 
 # Comet credentials, never commit an API key
 .comet.config

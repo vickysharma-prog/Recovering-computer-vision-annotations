@@ -24,6 +24,7 @@ recovered mapping.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +63,14 @@ _PITCH_MIN = _CONFIG.get("row_pitch_min", 6.0)
 _PITCH_MAX = _CONFIG.get("row_pitch_max", 12.0)
 _FG_GREY_DELTA = _CONFIG.get("fg_grey_delta", 28)
 _FILL_FILLED = _CONFIG.get("fill_filled", 0.55)
+_LADDER_MIN = _CONFIG.get("ladder_min_rows", 3)
+_DIALOG_MAX_AREA = _CONFIG.get("dialog_max_area_frac", 0.40)
+_TEXT_MIN_COLS = _CONFIG.get("row_text_min_cols", 10)
+_TEXT_MIN_RUNS = _CONFIG.get("row_text_min_runs", 3)
+# Shortest cleaned token `_find_species` will try to match. Species codes are four
+# letters, but OCR routinely drops the leading one; at 4 such a token never reaches
+# the matcher. SPECIES_MIN_TOKEN=4 restores the old gate for A/B.
+_SPECIES_MIN_TOKEN = int(os.environ.get("SPECIES_MIN_TOKEN", "3"))
 _SQUARE_EXTENT = _CONFIG.get("square_extent", 0.72)
 
 
@@ -632,13 +641,13 @@ def _column_ladder(
     Returns (inliers, marker_x, y_first, y_last, pitch). Dialog markers form a
     tight column with a regular pitch; scattered aerial dots do not.
     """
-    if len(inside) < 4:
+    if len(inside) < _LADDER_MIN:
         return 0, None, 0.0, 0.0, 0.0
     xs = np.array([b[0] for b in inside])
     best = (0, None, 0.0, 0.0, 0.0)
     for seed in np.unique(np.round(xs)):
         col = [b for b in inside if abs(b[0] - seed) <= max(6, msize * 0.7)]
-        if len(col) < 4:
+        if len(col) < _LADDER_MIN:
             continue
         ys = np.sort(np.array([b[1] for b in col]))
         diffs = np.diff(ys)
@@ -703,7 +712,7 @@ def locate_dialog(rgb: np.ndarray) -> Optional[tuple[int, int, int, int]]:
             continue
         inside = [z for z in blobs if x <= z[0] <= x + bw and y <= z[1] <= y + bh]
         inl, mx, y0, y1, pitch = _column_ladder(inside, msize)
-        if inl >= 4 and (best is None or inl > best[0]):
+        if inl >= _LADDER_MIN and (best is None or inl > best[0]):
             best = (inl, mx, y0, y1, pitch, x + bw)
 
     if best is None or best[1] is None:
@@ -719,7 +728,21 @@ def locate_dialog(rgb: np.ndarray) -> Optional[tuple[int, int, int, int]]:
     x1 = int(min(w, max(mx + msize * 30, panel_right)))
     yy0 = int(max(0, y0 - pitch * 3.5))
     yy1 = int(min(h, y1 + pitch * 2.5))
-    return (x0, yy0, x1 - x0, yy1 - yy0)
+    box = (x0, yy0, x1 - x0, yy1 - yy0)
+
+    # "A dialog is a contained box, not the whole frame" is checked above on the grey
+    # COMPONENT, but the box returned is rebuilt from the marker column and can grow
+    # far past it. On 17May15Camera1-Card3-01497 a column of aerial markers formed a
+    # ladder and the emitted box covered 54% of the frame -- almost all photograph,
+    # with a sliver of the real dialog at its right edge -- from which parse_legend
+    # read 25 phantom rows out of vegetation. Applying the bound the function already
+    # declares, to the thing it actually returns, rejects that and the same failure on
+    # 00948, 02092, 00622 and 1216.
+    if box[2] * box[3] > _DIALOG_MAX_AREA * img_area:
+        logger.info("legend: rejecting a %dx%d box covering %.0f%% of the frame",
+                    box[2], box[3], 100 * box[2] * box[3] / img_area)
+        return None
+    return box
 
 
 def parse_screenshot(rgb: np.ndarray) -> tuple[list[LegendEntry], Optional[tuple]]:
@@ -786,13 +809,38 @@ def parse_legend(
     text_w = max(40, int(pitch * 6))
 
     def row_has_name_text(y: int) -> bool:
-        """Dark class-name text exists to the right of the marker column."""
+        """
+        Class-name text exists to the right of the marker column.
+
+        This decides how far past the last coloured marker the table continues, so
+        anything it accepts becomes a legend row. Counting dark pixels was far too
+        weak: below the table on `17May10Camera2-Card1-5745` it accepted the blank
+        gap and the horizontal scrollbar, inventing two rows the dialog does not
+        have. Thirty-one aerial dots were then assigned to a class that does not
+        exist — the single largest remaining classification error.
+
+        Text is several separate marks. Measured on that dialog's name column, real
+        rows put ink in 41-54 distinct columns spread over many runs; the blank gap
+        manages 1-5; the scrollbar covers 70 columns in one unbroken run. So require
+        both some width of ink and that it is broken up, which a rule or a scrollbar
+        never is.
+        """
         x_lo = min(dw - 1, mx + cell + 2)
         x_hi = min(dw, mx + cell + text_w)
         if x_hi - x_lo < 6:
             return False
         strip = gray[max(0, y - int(pitch * 0.3)):y + int(pitch * 0.3) + 1, x_lo:x_hi]
-        return int((strip < 95).sum()) >= 4
+        if int((strip < 95).sum()) < 4:
+            return False
+        if _TEXT_MIN_COLS <= 0:
+            return True
+        # Text is several separate marks. A blank gap puts ink in a handful of
+        # columns and a scrollbar puts it in one unbroken run, so require both a
+        # width of ink and that it is broken up.
+        cols = np.where((strip < 95).any(axis=0))[0]
+        if cols.size < _TEXT_MIN_COLS:
+            return False
+        return int(np.count_nonzero(np.diff(cols) > 1)) + 1 >= _TEXT_MIN_RUNS
 
     # Row index of each colored blob, relative to the topmost marker.
     # Blobs anchor their rows precisely; the grid only numbers rows and
@@ -955,13 +1003,23 @@ def _find_species(tokens: list[str], vocab: list[str]) -> tuple[
     We strip non-alpha noise from each of the first two tokens and try the whole
     cleaned token, then its 4-letter prefix (every species code is 4 letters).
 
+    The length gate is 3, not 4, because OCR routinely drops the leading character
+    of a small-font code and a token one short then never reaches the matcher at
+    all. Measured over the 25 frames that reach classification, that alone accounts
+    for five rows — `RPE` and `BRE` are both one edit from `BRPE`.
+
+    It stays at edit distance 1. Raising it to 2 would resolve two more rows and be
+    wrong on both: `nest` is a category word and sits two edits from the species
+    code `BNST`, so a looser matcher invents a species that is not there. Coverage
+    bought with a wrong species is a regression, not a gain.
+
     Returns (species, token_index, glued_remainder) where glued_remainder is the
     leftover category text that shared the species token (e.g. 'WBN' from
     'BRPEWBN'), or ''.
     """
     for idx in range(min(2, len(tokens))):
         a = re.sub(r"[^A-Za-z]", "", tokens[idx])
-        if len(a) < 4:
+        if len(a) < _SPECIES_MIN_TOKEN:
             continue
         m = _best_match(a, vocab, max_dist=1)
         if m:
@@ -1074,6 +1132,34 @@ def attach_class_names(
     # scrollbar; counting from the right mis-picks the empty margin on B. Adapts
     # to any Name-column width (fixes image B, where long names pushed the Count
     # column past the old marker-relative offset).
+    #
+    # ## Known wrong on 14 of the 25 frames, and TWICE reverted — read before retrying
+    #
+    # This indexing assumes the first gridline is the table's left border and that
+    # at least three are found. `5745` yields only `[77, 174]`, so the divider is
+    # dropped and the name strip runs the full width, pulling Count digits into the
+    # name OCR. `0449` yields `[8, 110, 195, 315]` against a marker at x=122, so
+    # index 1 lands to the *left* of the marker: what the code reads as the Count
+    # column is actually the Name column, and a dialog plainly showing 93/70/11/23/10
+    # comes back as 3/None/0/0/0. Capacity caps at those, leaving 66 of 83 labelled
+    # dots unassigned — that frame scores 0.193 against 0.78 pooled.
+    #
+    # Choosing the first gridline right of the marker is clearly the correct
+    # geometry, and it improves names both times it was tried (species 0.771 →
+    # 0.858). It has broken classification both times:
+    #
+    #   moving both strips together   count 0.693 → 0.624, `5745` 0.861 → 0.634
+    #   bounding the strips apart     count 0.693 → 0.683, `5745` 0.861 → 0.600
+    #
+    # The second attempt kept the Count column on its old marker-relative offset
+    # unless gridlines bounded it on both sides, and `5745` still fell — so the
+    # damage is not only the Count strip. Moving the NAME boundary changes what
+    # `_parse_class_text` sees, which changes `class_name`, which changes the row
+    # identities the matcher and the eval both key on.
+    #
+    # So: do not retry this as a legend-parsing change scored on name coverage. It
+    # is a classification change and must be scored on `eval_localisation.py`, with
+    # `5745` (0.861) and `0027` (0.877) as the gate.
     gridlines = _column_gridlines(gray)
     if len(gridlines) >= 3 and gridlines[2] - gridlines[1] >= 15:
         name_count_div, right_border = gridlines[1], gridlines[2]

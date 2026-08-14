@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import pytest
 
+from src import legend
 from src.legend import (
     LegendEntry,
     canonical_template,
@@ -262,3 +263,83 @@ class TestParseLegendGuards:
     def test_no_grid_returns_empty(self):
         """A blank grey panel has no marker grid."""
         assert parse_legend(np.full((100, 100, 3), 200, np.uint8)) == []
+
+
+class TestColumnLadder:
+    """A legend can be three rows long, and one that short must still be findable.
+
+    `19May18Camera2-Card1-00620` lists LAGU Site / LAGU Bird / TRHE Site. Its grey
+    panel is detected, but the ladder used to demand four markers, so the dialog was
+    unreachable and every dot on the frame went unclassified — and the labelling tool
+    had no class palette either, so the frame could not even be labelled to prove it.
+    """
+
+    @staticmethod
+    def _column(n, x=100.0, y0=50.0, pitch=14.0, size=7.0):
+        return [(x, y0 + i * pitch, size) for i in range(n)]
+
+    def test_three_row_column_is_found(self):
+        inl, mx, _y0, _y1, pitch = legend._column_ladder(self._column(3), 7.0)
+        assert inl == 3
+        assert mx == pytest.approx(100.0)
+        assert pitch == pytest.approx(14.0)
+
+    def test_four_row_column_still_found(self):
+        inl, _mx, _y0, _y1, _p = legend._column_ladder(self._column(4), 7.0)
+        assert inl == 4
+
+    def test_two_markers_rejected(self):
+        # Two points define a pitch trivially, so they are not evidence of a table.
+        inl, mx, _y0, _y1, _p = legend._column_ladder(self._column(2), 7.0)
+        assert inl == 0 and mx is None
+
+    def test_scattered_dots_are_not_a_ladder(self):
+        # Aerial markers do not sit in a tight, regularly pitched column; if they did,
+        # loosening the minimum to three would start inventing dialogs.
+        scattered = [(10.0, 20.0, 7.0), (300.0, 55.0, 7.0), (140.0, 400.0, 7.0),
+                     (600.0, 90.0, 7.0)]
+        inl, _mx, _y0, _y1, _p = legend._column_ladder(scattered, 7.0)
+        assert inl == 0
+
+
+class TestDialogAreaBound:
+    """The box locate_dialog returns must obey the bound it already declares.
+
+    The 0.40-of-frame check is applied to the candidate grey panel, but the box is
+    rebuilt afterwards from the marker column and can outgrow it. On
+    17May15Camera1-Card3-01497 a column of aerial markers formed a ladder and the
+    emitted box covered 54% of the frame -- mostly photograph -- and parse_legend
+    read 25 phantom rows out of vegetation. Dots then get assigned to rows that do
+    not exist, which is worse than returning nothing.
+    """
+
+    @staticmethod
+    def _frame_with_panel(w=900, h=700, panel=(600, 60, 260, 300), rows=6):
+        """A textured 'aerial' with one flat grey panel holding a marker column."""
+        rng = np.random.default_rng(0)
+        img = rng.integers(40, 150, (h, w, 3), dtype=np.uint8)
+        px, py, pw, ph = panel
+        img[py:py + ph, px:px + pw] = 210
+        for i in range(rows):
+            cv2.circle(img, (px + 20, py + 30 + i * 22), 4, (220, 30, 30), -1)
+        # Scattered aerial markers so the frame has enough coloured blobs overall.
+        for i in range(30):
+            cv2.circle(img, (int(rng.integers(20, 560)), int(rng.integers(20, h - 20))),
+                       4, (220, 30, 30), -1)
+        return img
+
+    def test_a_real_panel_is_returned(self):
+        box = locate_dialog(self._frame_with_panel())
+        assert box is not None
+        x, y, w, h = box
+        assert w * h < 0.40 * 900 * 700
+
+    def test_an_oversized_box_is_rejected(self, monkeypatch):
+        # Same frame, but with the bound tightened below the panel's own size: the
+        # box must be refused rather than returned and parsed.
+        img = self._frame_with_panel()
+        box = locate_dialog(img)
+        assert box is not None
+        frac = (box[2] * box[3]) / float(img.shape[0] * img.shape[1])
+        monkeypatch.setattr(legend, "_DIALOG_MAX_AREA", frac * 0.5)
+        assert locate_dialog(img) is None

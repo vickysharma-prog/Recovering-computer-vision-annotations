@@ -117,6 +117,35 @@ legend:
   glyph_upscale: 48       # upscale target px (z = round(target / cell_side))
   template_size: 24
 
+  # Minimum markers in the dialog's regular marker column before a grey panel is
+  # accepted as the legend (src/legend.py -> _column_ladder / locate_dialog). Was 4,
+  # which made a three-row legend unfindable however clearly it was drawn:
+  # 19May18Camera2-Card1-00620 shows LAGU Site / LAGU Bird / TRHE Site and its grey
+  # panel IS detected, but the ladder rejected it for having three markers. Three is
+  # a fact about the data rather than a tuned value. Measured over the 63-frame
+  # benchmark, 4 -> 3 finds 53 dialogs -> 57, gains 0483, 810, 00495 and 00620,
+  # loses none, and moves no box on a frame that already worked.
+  ladder_min_rows: 3
+
+  # Largest share of the frame the RETURNED dialog box may cover (src/legend.py ->
+  # locate_dialog). The same bound is already applied to the candidate grey panel,
+  # but the emitted box is rebuilt from the marker column and could grow past it: on
+  # 17May15Camera1-Card3-01497 a column of aerial markers formed a ladder and the box
+  # covered 54% of the frame, mostly photograph, and parse_legend read 25 phantom rows
+  # out of vegetation. Same value as the component check, applied to the output.
+  dialog_max_area_frac: 0.40
+
+  # What counts as class-name text when deciding how far the legend table extends
+  # (src/legend.py -> parse_legend/row_has_name_text). The old test was "at least 4
+  # dark pixels", which accepted the blank gap below the table AND the horizontal
+  # scrollbar on 17May10Camera2-Card1-5745, inventing two rows the dialog does not
+  # have; 31 aerial dots were then assigned to a class that does not exist.
+  # Measured on that dialog's name column: real rows put ink in 41-54 distinct
+  # columns in many separate runs, the blank gap in 1-5, and the scrollbar in 70
+  # columns forming one unbroken run. Text is several separate marks, so both a
+  # width of ink and a break-up of it are required.
+  row_text_min_cols: 10
+  row_text_min_runs: 3
 # Registration of a screenshot against its clean high-resolution original
 # (src/align.py). Feeds difference-based annotation detection.
 align:

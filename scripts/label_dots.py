@@ -134,8 +134,15 @@ def seeds_for(shot, orig, res, bbox, entries):
     for d in dots:
         if all((d.cx - k.cx) ** 2 + (d.cy - k.cy) ** 2 > 16 for k in keep):
             keep.append(d)
+    # `pred_row` alongside `pred`: the legend ROW is the class identity, the name is
+    # display text that OCR may never read. A label file that stores only names
+    # freezes placeholders like "row 2 (green)" into the ground truth, so a later
+    # OCR fix can never be scored against it — the truth string stays a placeholder
+    # while the prediction becomes a real name, and the pair mismatches forever.
     return [{"x": round(float(d.cx), 1), "y": round(float(d.cy), 1),
-             "cls": None, "pred": getattr(d, "class_name", None)} for d in keep]
+             "cls": None, "row": None,
+             "pred": getattr(d, "class_name", None),
+             "pred_row": getattr(d, "legend_row", None)} for d in keep]
 
 
 # Ring colours for the canvas, keyed by the name `legend` already assigns each
@@ -144,6 +151,33 @@ def seeds_for(shot, orig, res, bbox, entries):
 _RING = {"red": "#e5352b", "orange": "#f08a24", "yellow": "#e8c020",
          "green": "#3aa757", "cyan": "#25c4d6", "blue": "#2b6fe0",
          "magenta": "#d436b8", "grey": "#9aa0a6", "gray": "#9aa0a6"}
+
+
+def legend_options(entries) -> tuple[list[str], list]:
+    """The class palette as (display names, legend row indices), in list order.
+
+    The single source of truth for how a legend row is named on the labelling page.
+    `eval_localisation.py` calls it too, to recover which row a stored `cls` string
+    refers to — if the two derived names independently they could drift, which is
+    the same failure the row key exists to remove.
+
+    Two things this has to get right:
+      - a row whose name never read shows as "row N (colour)" where N is the LIST
+        position, because that is what the labeller sees and what existing label
+        files were written against;
+      - `LegendEntry.row` is the identity and is NOT always the list position,
+        since `parse_legend` skips a row whose crop falls outside the dialog.
+    Duplicate names are suffixed so a stored string maps back to exactly one row.
+    """
+    names, rows, seen = [], [], set()
+    for i, e in enumerate(entries):
+        name = (e.class_name or "").strip() or f"row {i + 1} ({e.color})"
+        if name in seen:
+            name = f"{name} #{i + 1}"
+        seen.add(name)
+        names.append(name)
+        rows.append(e.row)
+    return names, rows
 
 
 def _glyph_png(dialog_rgb, e, pad=11) -> str:
@@ -187,12 +221,9 @@ def legend_for(shot):
                 attach_class_names(dialog, entries)
             except Exception:                                      # noqa: BLE001
                 pass
-        names, colors, glyphs = [], {}, {}
-        for i, e in enumerate(entries):
-            name = (e.class_name or "").strip() or f"row {i + 1} ({e.color})"
-            if name in colors:
-                name = f"{name} #{i + 1}"
-            names.append(name)
+        names, rows = legend_options(entries)
+        colors, glyphs = {}, {}
+        for name, e in zip(names, entries):
             colors[name] = _RING.get((e.color or "").lower(), "#9aa0a6")
             glyphs[name] = _glyph_png(dialog, e) if dialog is not None else ""
 
@@ -204,9 +235,9 @@ def legend_for(shot):
             ok, buf = cv2.imencode(".png", cv2.cvtColor(dialog, cv2.COLOR_RGB2BGR))
             if ok:
                 dlg = "data:image/png;base64," + base64.b64encode(buf).decode()
-        return names, colors, glyphs, bbox, entries, dlg
+        return names, rows, colors, glyphs, bbox, entries, dlg
     except Exception:                                              # noqa: BLE001
-        return [], {}, {}, None, [], ""
+        return [], [], {}, {}, None, [], ""
 
 
 def select(bench: pd.DataFrame, n: int, only: str | None) -> pd.DataFrame:
@@ -237,6 +268,14 @@ def main() -> None:
     ap.add_argument("--blind", type=int, default=2,
                     help="frames left unseeded, as a control on seeding bias")
     ap.add_argument("--only", default=None)
+    ap.add_argument("--reuse-labels", action="store_true",
+                    help="seed from the frame's existing file in data/labels/ instead "
+                         "of from the detector. For a frame already labelled for "
+                         "position whose classes could not be assigned because the "
+                         "legend did not parse: once it does, the positions are still "
+                         "good and only the class is missing, so re-marking them by "
+                         "hand would discard work and risk moving dots the eval is "
+                         "already scored against.")
     args = ap.parse_args()
 
     os.makedirs(OUT, exist_ok=True)
@@ -260,12 +299,13 @@ def main() -> None:
             continue
 
         blind = name in blind_set
-        classes, colors, glyphs, bbox, entries, dialog_png = legend_for(shot)
+        classes, rows, colors, glyphs, bbox, entries, dialog_png = legend_for(shot)
         # Always available, so a frame whose legend fails to parse (00097 yields
         # zero rows) can still be labelled for position, and so a marker the
         # legend does not explain has somewhere to go instead of being forced
-        # into a wrong class.
+        # into a wrong class. It has no legend row, hence the None.
         classes = classes + ["unclear / not in legend"]
+        rows = rows + [None]
         colors["unclear / not in legend"] = "#ffffff"
         if bbox is None:
             try:
@@ -273,7 +313,18 @@ def main() -> None:
             except Exception:                                      # noqa: BLE001
                 bbox = None
         res = cached_align(r.screenshot_key, shot, orig, cache) if orig is not None else None
-        seeds = [] if blind else seeds_for(shot, orig, res, bbox, entries)
+        prior = os.path.join("data/labels", name.replace(".jpg", ".json"))
+        if args.reuse_labels and os.path.exists(prior):
+            # Positions already agreed by hand; only the class is missing. Keep the
+            # dots exactly where they are so the detection numbers this frame already
+            # contributed do not move underneath the classification numbers.
+            old = json.load(open(prior))["dots"]
+            seeds = [{"x": d["x"], "y": d["y"], "cls": d.get("cls"),
+                      "row": d.get("row"), "pred": None, "pred_row": None}
+                     for d in old]
+            print(f"  {name}: reusing {len(seeds)} hand-labelled positions")
+        else:
+            seeds = [] if blind else seeds_for(shot, orig, res, bbox, entries)
 
         ok, buf = cv2.imencode(".jpg", cv2.cvtColor(shot, cv2.COLOR_RGB2BGR),
                                [cv2.IMWRITE_JPEG_QUALITY, 92])
@@ -286,7 +337,7 @@ def main() -> None:
         # happens to contain it.
         data = dict(frame=name, key=r.screenshot_key, highres_key=r.highres_key,
                     truth=float(r.dots), band=r.band,
-                    classes=classes, colors=colors, glyphs=glyphs, seeds=seeds,
+                    classes=classes, rows=rows, colors=colors, glyphs=glyphs, seeds=seeds,
                     dialog=dialog_png, dialog_bbox=list(bbox) if bbox is not None else None,
                     image="data:image/jpeg;base64," + base64.b64encode(buf).decode())
         html = (template.replace("__DATA__", json.dumps(data))

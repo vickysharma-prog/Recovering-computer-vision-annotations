@@ -1,0 +1,1736 @@
+{
+ "frame": "27May12Camera1-Card2-0449.jpg",
+ "screenshot_key": "avian_monitoring/screenshots/2012/Barataria Bay/Cat Bay South Island/27May12Camera1-Card2-0449.jpg",
+ "highres_key": "avian_monitoring/high_resolution_photos/2012/Barataria Bay/Cat Bay South Island/27May12Camera1-Card2-0449.jpg",
+ "width": 1221,
+ "height": 849,
+ "seeded": true,
+ "seed_count": 230,
+ "survey_count": 216,
+ "band": "medium",
+ "tiles_total": 24,
+ "tiles_reviewed": 24,
+ "tile_px": 220,
+ "dots": [
+  {
+   "x": 679,
+   "y": 39,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 635.5,
+   "y": 67.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 355,
+   "y": 80,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 599.5,
+   "y": 82,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 691.5,
+   "y": 94,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 615,
+   "y": 99.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 580.5,
+   "y": 103,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 623.5,
+   "y": 107,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 583,
+   "y": 128.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 582.5,
+   "y": 133.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 621.6,
+   "y": 148.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 607,
+   "y": 156,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 569.1,
+   "y": 168,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 591.8,
+   "y": 175.3,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 559.5,
+   "y": 192.5,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 584.5,
+   "y": 197,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 486.2,
+   "y": 196.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 610.5,
+   "y": 205,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": "LAGU site",
+   "pred_row": 0
+  },
+  {
+   "x": 650,
+   "y": 207.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 602,
+   "y": 223,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 634.2,
+   "y": 227.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": "LAGU site",
+   "pred_row": 0
+  },
+  {
+   "x": 280.3,
+   "y": 247.3,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 341,
+   "y": 257,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 630,
+   "y": 256.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 618,
+   "y": 255,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 722,
+   "y": 272,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 597,
+   "y": 275.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 623.5,
+   "y": 276.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 600,
+   "y": 283.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 311.5,
+   "y": 292,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 453.5,
+   "y": 292,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 718,
+   "y": 291,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 525.5,
+   "y": 297.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 492,
+   "y": 306,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 616.3,
+   "y": 306.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 556.3,
+   "y": 315.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 175.7,
+   "y": 326.3,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 347.5,
+   "y": 333,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 368.5,
+   "y": 335,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 322,
+   "y": 341.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 563,
+   "y": 349,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 653.9,
+   "y": 356.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 593.4,
+   "y": 376,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 553.9,
+   "y": 379.9,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 659.5,
+   "y": 383.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 575.8,
+   "y": 384,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 644.5,
+   "y": 388,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 635,
+   "y": 401,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 425,
+   "y": 405,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 337.4,
+   "y": 406.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 652,
+   "y": 413,
+   "cls": null,
+   "row": null,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 657,
+   "y": 419,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 752.5,
+   "y": 421,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 367,
+   "y": 432.5,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 507,
+   "y": 433,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 591,
+   "y": 437,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 585,
+   "y": 439,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 775,
+   "y": 444,
+   "cls": "PAPE Chick. as a",
+   "row": 4,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 307.5,
+   "y": 451,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 295.5,
+   "y": 463,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 487.5,
+   "y": 471,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 559,
+   "y": 485,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 690.2,
+   "y": 494,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 251,
+   "y": 503,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 530.4,
+   "y": 503.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 984,
+   "y": 822,
+   "cls": null,
+   "row": null,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 1027,
+   "y": 524,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 995,
+   "y": 664,
+   "cls": "PAPE Chick. as a",
+   "row": 4,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1063,
+   "y": 681,
+   "cls": "PAPE Chick. as a",
+   "row": 4,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1159,
+   "y": 775.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": "LAGU bird",
+   "pred_row": 1
+  },
+  {
+   "x": 984.2,
+   "y": 772.8,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1013,
+   "y": 798.5,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 996.6,
+   "y": 805.1,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1057,
+   "y": 804.8,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1022.1,
+   "y": 805.4,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1037.3,
+   "y": 811.5,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1055.1,
+   "y": 818.4,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1038.9,
+   "y": 822.4,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 26.5,
+   "y": 103,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 661.2,
+   "y": 91.8,
+   "cls": "BRNO bird",
+   "row": 8,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 501.8,
+   "y": 78.9,
+   "cls": "ROYT bird",
+   "row": 7,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1050.5,
+   "y": 771.8,
+   "cls": "ROYT bird",
+   "row": 7,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1025.1,
+   "y": 778.5,
+   "cls": "ROYT bird",
+   "row": 7,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1014.1,
+   "y": 815,
+   "cls": "ROYT bird",
+   "row": 7,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 989.5,
+   "y": 788.7,
+   "cls": "ROYT site",
+   "row": 6,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1026.9,
+   "y": 679.4,
+   "cls": "wbn",
+   "row": 5,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1099.6,
+   "y": 683,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 807.8,
+   "y": 447.5,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 844.7,
+   "y": 505.5,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 955.5,
+   "y": 442.2,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 205.9,
+   "y": 122,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 270.3,
+   "y": 86.9,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 330.4,
+   "y": 108.9,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 391.9,
+   "y": 92.7,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 393.3,
+   "y": 69.3,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 480.8,
+   "y": 126.1,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 710.7,
+   "y": 75.5,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 731.8,
+   "y": 132.4,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 708.6,
+   "y": 138.8,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 719.5,
+   "y": 218.9,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 719.8,
+   "y": 240.4,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 736.9,
+   "y": 305.1,
+   "cls": "BRE: Bid: as",
+   "row": 3,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 506.5,
+   "y": 491,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 519.2,
+   "y": 464.2,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 361,
+   "y": 505.2,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 317.9,
+   "y": 488.9,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 506.7,
+   "y": 250.6,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 450.7,
+   "y": 254.7,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 493.5,
+   "y": 344.2,
+   "cls": "BRPE wbn",
+   "row": 2,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1159,
+   "y": 353,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1101,
+   "y": 335.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1055.3,
+   "y": 727.4,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 980.8,
+   "y": 733,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 708.2,
+   "y": 454.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 710.7,
+   "y": 437.7,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 678.9,
+   "y": 373,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 691.2,
+   "y": 362,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 639.9,
+   "y": 369.4,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 648.4,
+   "y": 324.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 606.9,
+   "y": 354.7,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 585,
+   "y": 283.9,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 576.4,
+   "y": 255.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 544.7,
+   "y": 244.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 442.1,
+   "y": 164.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 213.9,
+   "y": 142.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 256.6,
+   "y": 208.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 248,
+   "y": 465.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 356,
+   "y": 470.4,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 400.7,
+   "y": 491,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 378.9,
+   "y": 344.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 407.8,
+   "y": 310.9,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 343.6,
+   "y": 295,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 336,
+   "y": 320.9,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 329.5,
+   "y": 356.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 533.8,
+   "y": 391.6,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 447.8,
+   "y": 432.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 627.4,
+   "y": 283.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 598,
+   "y": 265.6,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 600,
+   "y": 245.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 609.4,
+   "y": 246.1,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 440.3,
+   "y": 110.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 418.3,
+   "y": 84.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 418.3,
+   "y": 60.4,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 404.9,
+   "y": 39.7,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 425.7,
+   "y": 37.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 479.4,
+   "y": 37.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 453.7,
+   "y": 42.1,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 448.9,
+   "y": 62.9,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 430.6,
+   "y": 59.2,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 464.7,
+   "y": 62.9,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 472.1,
+   "y": 49.4,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 485.5,
+   "y": 61.6,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 491.6,
+   "y": 95.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 534.3,
+   "y": 128.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 611.2,
+   "y": 121.5,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 643,
+   "y": 133.7,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 678.4,
+   "y": 139.8,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 608.8,
+   "y": 170.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 578.3,
+   "y": 220.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 636.8,
+   "y": 181.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 677.1,
+   "y": 202,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 728.4,
+   "y": 172.7,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 750.4,
+   "y": 197.1,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 388.3,
+   "y": 189.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 367.8,
+   "y": 190.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 383.3,
+   "y": 232.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 376.3,
+   "y": 247.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 408.1,
+   "y": 223.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 390.9,
+   "y": 218.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 398.3,
+   "y": 201.6,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 401.3,
+   "y": 193.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 408.1,
+   "y": 206.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 484.6,
+   "y": 207.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 476.8,
+   "y": 230,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 439,
+   "y": 325.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 368.4,
+   "y": 316.9,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 351.7,
+   "y": 347.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 334.5,
+   "y": 348.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 467,
+   "y": 327.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 465.5,
+   "y": 353.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 481.2,
+   "y": 378.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 521.9,
+   "y": 314.9,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 526.6,
+   "y": 391.9,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 580.6,
+   "y": 277.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 576.1,
+   "y": 267.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 589.2,
+   "y": 266.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 552,
+   "y": 238.1,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 540.5,
+   "y": 217.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 536,
+   "y": 207.1,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 519.3,
+   "y": 202.2,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 503.7,
+   "y": 208.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 337.4,
+   "y": 437.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 378.1,
+   "y": 458.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 283.5,
+   "y": 462.9,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 294.7,
+   "y": 512.7,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 551,
+   "y": 459.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 546.9,
+   "y": 449.6,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 539.8,
+   "y": 476.1,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 545.9,
+   "y": 492.4,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 674.2,
+   "y": 506.1,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 618.2,
+   "y": 324.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 633,
+   "y": 313,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 634.7,
+   "y": 354.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 612.9,
+   "y": 344.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 648.8,
+   "y": 369.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 612.9,
+   "y": 237.1,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 600.1,
+   "y": 122.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 600.1,
+   "y": 113.3,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 564.8,
+   "y": 121.8,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 567.6,
+   "y": 95.6,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 595.2,
+   "y": 101.3,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 619.2,
+   "y": 81.5,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 631.2,
+   "y": 83.6,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 1116.6,
+   "y": 675.3,
+   "cls": "LAGU bird",
+   "row": 1,
+   "pred": null,
+   "pred_row": null
+  },
+  {
+   "x": 585.9,
+   "y": 122,
+   "cls": "LAGU site",
+   "row": 0,
+   "pred": null,
+   "pred_row": null
+  }
+ ]
+}
