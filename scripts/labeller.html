@@ -206,9 +206,10 @@ window.onmouseup = e => {
       snapshot();
       if (hit >= 0) {
         if (e.shiftKey || !cls) dots.splice(hit, 1);
-        else dots[hit].cls = cls;
+        else { dots[hit].cls = cls; dots[hit].row = rowOf(cls); }
       } else {
-        dots.push({ x: +p.x.toFixed(1), y: +p.y.toFixed(1), cls: cls, pred: null });
+        dots.push({ x: +p.x.toFixed(1), y: +p.y.toFixed(1), cls: cls,
+                    row: rowOf(cls), pred: null, pred_row: null });
       }
       persist();
     }
@@ -223,6 +224,16 @@ stage.onwheel = e => {
   ox = mx - (mx - ox) * (nz / z); oy = my - (my - oy) * (nz / z); z = nz;
   markSwept(); draw();
 };
+
+// The legend ROW is the class identity; the name is display text OCR may never read.
+// Storing only the name freezes placeholders like "row 2 (green)" into the ground
+// truth, so a later OCR fix can never be scored against these labels. Returns null
+// for the synthetic "unclear / not in legend" option, which has no row.
+function rowOf(c) {
+  if (!c || !DATA.rows) return null;
+  const i = DATA.classes.indexOf(c);
+  return (i >= 0 && i < DATA.rows.length) ? DATA.rows[i] : null;
+}
 
 const cbox = document.getElementById('classes');
 DATA.classes.forEach((c, i) => {
