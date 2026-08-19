@@ -259,3 +259,5 @@ results/labelling/
 
 # Orientation notes kept for our own use, not part of the published repo.
 docs/PROJECT_STATE.md
+testgdal/
+results/figures/full/

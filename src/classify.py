@@ -77,6 +77,14 @@ class AerialDot:
     category: Optional[str] = None
     class_name: Optional[str] = None   # display text; may be None or non-unique
     match_score: float = 0.0
+    # Every row this dot's own colour proposed, best score first, and their scores.
+    # Nothing in this module reads them: they exist so the export can carry more than
+    # one candidate class per dot and let review settle the uncertain ones, which is
+    # cheaper than re-running the pipeline to find out what the runner-up was.
+    # A dot can carry candidates and still hold no class, when every one of them
+    # filled up — that case is exactly the one worth reviewing.
+    candidates: tuple = ()
+    candidate_scores: tuple = ()
 
 
 def _split_cluster(
@@ -227,6 +235,12 @@ _SCORE_COLOR = float(os.environ.get("SCORE_COLOR", "0.2"))
 # Retry a dot whose every candidate row filled up, against any row still inside
 # `_COLOR_REJECT`. Only blocked dots are reconsidered. BLOCKED_RETRY=0 disables.
 _BLOCKED_RETRY = os.environ.get("BLOCKED_RETRY", "1") != "0"
+# How many candidate rows a dot records for review. Nothing in this module reads
+# them; the export carries them so an uncertain dot can be resolved by hand without
+# re-running the pipeline. Five is a cap on CSV width, not a threshold: a 14-row
+# dialog can put more than that inside the colour margin, and the tail of a list
+# already sorted by score is the part nobody reviews.
+_MAX_CANDIDATES = int(os.environ.get("MAX_CANDIDATES", "5"))
 # Discard a row count larger than the whole frame's detections — it cannot be true.
 # COUNT_SANITY=0 disables. See where `capacity` is built in `assign_classes`.
 _COUNT_SANITY = os.environ.get("COUNT_SANITY", "1") != "0"
@@ -905,8 +919,20 @@ def assign_classes(
                     used[id(e)] = used.get(id(e), 0) + 1
         return pairs, taken
 
-    def _write(taken):
+    def _write(taken, pairs):
+        # `pairs` arrives sorted by score, so a dot's candidates come out best first
+        # without re-sorting. Only colour-proposed rows are here; the blocked-dot
+        # retry's widened set is deliberately not, because a row colour rejected is
+        # not a candidate.
+        by_dot: dict[int, list] = {}
+        for score, _q, i, e in pairs:
+            if len(by_dot.setdefault(i, [])) < _MAX_CANDIDATES:
+                by_dot[i].append((e.row, round(score, 3)))
+
         for i, d in enumerate(dots):
+            cand = by_dot.get(i, [])
+            d.candidates = tuple(row for row, _s in cand)
+            d.candidate_scores = tuple(s for _r, s in cand)
             best = taken.get(i)
             if best is None:
                 d.legend_row = d.species = d.category = d.class_name = None
@@ -924,7 +950,7 @@ def assign_classes(
     pairs, taken = _assign(None, retry_blocked=False)
     if not pairs:
         return dots
-    _write(taken)
+    _write(taken, pairs)
 
     # Final pass. The drift from legend glyph to aerial marker is per row, not per
     # frame (`_row_offsets`), and those offsets only ADD candidates, so no dot the
@@ -932,8 +958,8 @@ def assign_classes(
     # blocked-dot retry, which must not depend on whether any row had enough dots
     # to yield an offset.
     offsets = _row_offsets(dots, palette) if _ROW_OFFSET else {}
-    _, final = _assign(offsets)
-    _write(final)
+    final_pairs, final = _assign(offsets)
+    _write(final, final_pairs)
     return dots
 
 
