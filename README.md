@@ -1,6 +1,6 @@
 > Developed for [Google Summer of Code 2026](https://summerofcode.withgoogle.com/) under the DeepForest project (WeeCology).
 
-# Recovering Bird Annotations from Historical Airborne Imagery
+# Weecology : Recovering Bird Annotations from Historical Airborne Imagery
 
 Between 2010 and 2021, surveyors counted birds in Gulf of Mexico aerial photographs using a point-counting tool. The tool drew a coloured dot on the photograph for every bird and saved a screenshot. It never saved the coordinates. What remains is 18,304 screenshots with the annotations baked into the pixels, and the clean high-resolution photographs they were drawn on.
 
