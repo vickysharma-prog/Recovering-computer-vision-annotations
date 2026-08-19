@@ -58,17 +58,22 @@ def densest(pts: np.ndarray, shape, half: int) -> tuple[int, int]:
     return bx, by
 
 
-def build(window: int) -> None:
+def build(window: int, only=None, cols: int = 5,
+          out_name: str = "fig_box_per_frame.png") -> None:
     if not DATASET.exists():
         raise SystemExit(f"{DATASET} not found. Run scripts/export_dataset.py first.")
     full = pd.read_csv(DATASET)
     e = full[full.exported]
     frames = sorted(e.frame.unique())
+    if only:
+        frames = [f for f in frames if any(k in f for k in only)]
+        if not frames:
+            raise SystemExit(f"no exported frame matching {only}")
     half = window // 2
 
-    cols = 5
+    cols = min(cols, len(frames))
     rows = int(np.ceil(len(frames) / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(4.0 * cols, 4.35 * rows))
+    fig, axes = plt.subplots(rows, cols, figsize=(4.6 * cols, 5.0 * rows))
     axes = np.atleast_2d(axes)
 
     measured = 0
@@ -108,26 +113,34 @@ def build(window: int) -> None:
     for j in range(len(frames), rows * cols):
         axes[j // cols, j % cols].axis("off")
 
-    boxes = e.groupby("frame").box_px.first()
+    all_boxes = e.groupby("frame").box_px.first()
+    scope = (f"{len(frames)} of {e.frame.nunique()} frames shown"
+             if only else f"{len(frames)} frames, {len(e)} boxes")
     fig.suptitle(
         "Every exported frame carries its own box, measured from its own birds\n"
-        f"{len(frames)} frames, {len(e)} boxes   ·   "
-        f"box {boxes.min():.0f}-{boxes.max():.0f}px, median {boxes.median():.0f}px   "
-        f"·   measured on {measured} of {len(frames)} frames   ·   "
-        f"windows are {window}x{window}px at full resolution",
+        f"{scope}   ·   across all {e.frame.nunique()} frames the box runs "
+        f"{all_boxes.min():.0f}-{all_boxes.max():.0f}px, median "
+        f"{all_boxes.median():.0f}px   ·   measured on {measured} of {len(frames)} "
+        f"shown   ·   windows are {window}x{window}px at full resolution",
         fontsize=13, y=0.997)
     fig.tight_layout(rect=(0, 0, 1, 0.975))
 
     OUT.mkdir(parents=True, exist_ok=True)
-    out = OUT / "fig_box_per_frame.png"
+    out = OUT / out_name
     fig.savefig(out, dpi=90, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"wrote {out}  ({out.stat().st_size // 1024} KB)  "
-          f"{len(frames)} frames, box {boxes.min():.0f}-{boxes.max():.0f}px")
+          f"{len(frames)} frames, box {all_boxes.min():.0f}-{all_boxes.max():.0f}px")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", type=int, default=300,
                     help="side of the full-resolution window shown per frame")
-    build(ap.parse_args().window)
+    ap.add_argument("--frames", default=None,
+                    help="comma-separated substrings, to show a few frames close up "
+                         "instead of all 25")
+    ap.add_argument("--cols", type=int, default=5)
+    ap.add_argument("--out", default="fig_box_per_frame.png")
+    a = ap.parse_args()
+    build(a.window, a.frames.split(",") if a.frames else None, a.cols, a.out)
