@@ -338,6 +338,12 @@ def main() -> None:
         .to_csv(df_path, index=False)
     frames_df.to_csv(frames_path, index=False)
 
+    # frames.csv carries every candidate with the reason it is in or out, which is
+    # what makes the funnel auditable but means most of its rows are frames that did
+    # not ship. This is the shipped set on its own, so nobody has to filter for it.
+    exported_path = os.path.join(args.out, "exported_frames.csv")
+    frames_df[frames_df.dots_exported > 0].to_csv(exported_path, index=False)
+
     cached = frames_df["cached"].sum()
     accepted = frames_df["accepted"].sum()
     with_dialog = (frames_df["accepted"] & frames_df["dialog_found"]).sum()
