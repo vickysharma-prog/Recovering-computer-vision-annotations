@@ -262,3 +262,5 @@ docs/PROJECT_STATE.md
 testgdal/
 results/figures/full/
 docs/experiments.md
+results/dataset_scaled/chunks/
+results/training/
