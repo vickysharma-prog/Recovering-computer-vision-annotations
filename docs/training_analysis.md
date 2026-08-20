@@ -184,21 +184,3 @@ normally. `Model.create_anchor_generator` offers sizes down to 8px and looks lik
 for 16px boxes, but its own defaults raise an assertion and `create_model` never calls it.
 torchvision's RetinaNet matches with `allow_low_quality_matches=True`, so every
 ground-truth box is assigned its best anchor whatever the IoU. Nothing is dropped.
-
----
-
-## What the earlier prototype found
-
-Four experiments predating this pipeline, on 28 images with fixed 80x80 boxes. Their
-numbers are superseded; the diagnosis is why parts of the current code look as they do.
-
-- **SAM 3 leaves a global bfloat16 autocast enabled** that survives deleting the model.
-  DeepForest then trains without error and returns every score as 1.0. Every notebook here
-  asserts the autocast is off before training.
-- **Boxes sized wrong cost training signal.** Fixed 80x80 ground truth against a model
-  predicting 106x105 gives IoU around 0.45 to 0.55, so about half the correct predictions
-  earn no credit. The current pipeline measures a box per frame from that frame's own
-  birds.
-- **Position accuracy beats annotation count.** Training on 920 SIFT-mapped annotations at
-  0.5px beat training on 3,851 that included uniform-mapped data at about 30px error.
-  Mapping is now sub-pixel throughout, and `src/mapping.py` exists because of this.

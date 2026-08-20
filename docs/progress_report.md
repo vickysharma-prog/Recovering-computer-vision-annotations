@@ -1656,55 +1656,121 @@ is 20 and a standalone validate runs at epoch 0.
 
 ## How to Resume
 
+### Where things stand
+
+`main` carries everything through the DeepForest CSV. PR #11 is merged. Deliverable #1
+(the recovery approach) and #2 (the dataset) are done; #3 (a model) has four measured
+runs; #4 (a DeepForest PR) was cancelled by the mentors; #5 (a blog post) is not started.
+
+```
+results/dataset/          25 benchmark frames        6,420 boxes
+results/dataset_scaled/  413 frames drawn fresh    118,270 boxes
+```
+
+Both carry `annotations_deepforest.csv` (the six columns DeepForest reads),
+`exported_frames.csv` (one row per shipped frame with what was measured on it), and for
+the 25-frame set `frames.csv` (all 63 candidates with the reason each is in or out).
+`annotations_full.csv` for the scaled run stays local at 54 MB.
+
+### The pipeline, end to end
+
+```
+screenshot + clean original
+   align.py       register the two                 96.7%, 0.38px
+   subtract.py    annotations as image difference
+   select.py      which frames to trust            43% of a fresh draw pass
+   legend.py      find dialog, parse its rows      names 0.904, counts 0.693
+   classify.py    dot -> legend row                0.781 per dot
+   mapping.py     screenshot px -> original px     sub-pixel
+   birdsize.py    how large a bird is, per frame   box 16-77px
+   scripts/export_dataset.py
+```
+
+### Commands
+
 ```bash
-# 1. Rebuild ground truth + benchmark (only if data/cache is empty)
+# rebuild ground truth and the benchmark, only if data/cache is empty
 python scripts/build_manifest.py
 python scripts/build_benchmark.py --per-cell 3
 
-# 2. The gate: current numbers
-python scripts/eval_detection.py        # counts, old vs new, vs category_sum
-python scripts/eval_alignment.py        # registration success rate
+# the real gate, per dot against the hand labels in data/labels/
+python scripts/eval_localisation.py     # placement sub-pixel, classification 0.781
 
-# 3. The real gate: per-dot, against the hand labels in data/labels/
-python scripts/eval_localisation.py     # placement 0.65px, classification 0.781
+# the dataset
+python scripts/export_dataset.py                    # 25 frames, writes results/dataset/
+python scripts/export_dataset.py --box 80 --out X   # force one box size, for a sweep
 
-# 4. More labels
+# figures, all from the live path
+python scripts/make_box_figure.py                          # all 25 frames, the boxes
+python scripts/make_box_figure.py --frames 5745,0027,0406,426 --window 190 --cols 4        --out fig_box_closeup.png                           # a readable close-up
+python scripts/make_mapping_figure.py                      # dots on the photographs
+python scripts/make_full_overlays.py                       # every frame at full size
+
+# more hand labels
 python scripts/label_dots.py --only <frame>.jpg --blind 0
 # open results/labelling/*.html, label, press S; the browser saves to Downloads,
 # so copy the JSON into data/labels/ afterwards
 
-# 5. Figures, from the live pipeline
-python scripts/make_classification_figures.py
-python scripts/make_classify_figure.py --pair 17May10Camera2-Card1-5745.jpg --rows 8
-
-# 6. Tests
-pytest tests/ -q                        # 211 passing
+# tests
+pytest tests/ -q                        # 236 passing
 ```
 
-**Score changes with `eval_localisation.py`, not `eval_detection.py`.** The count metric
-cannot see whether a dot sits on a marker. Read three things from its output, in order:
-detection precision and recall must be unchanged; classification is the seven selected
-frames, not the pooled twelve; and no individual frame may fall.
+### Training
 
-**Ground rules that must not be broken** (each was learned the hard way):
-1. The pipeline works from the **image alone**: the screenshot and its paired
-   clean original. Survey counts are **never** a pipeline input.
-2. The survey data is for **validation only**. Feeding it in and scoring against
-   it makes the score meaningless, this happened once already (count-prior).
+Notebooks are local and gitignored: `notebook/e4_training_kaggle.ipynb` is the one that
+runs, three cells, on Kaggle rather than Colab because Kaggle publishes its quota (40
+GPU-hours a week, 9-hour sessions) and can run a notebook in the background with
+**Save Version, Save and Run All**.
+
+Results go in `docs/experiments.md`, which is local. The published summary is
+`docs/training_analysis.md`.
+
+Four runs so far. E1 trained on 18 frames and scored against the recovered annotations:
+F1 0.225 to 0.267. E2 swept the threshold and showed that was +7%, not +18%, because both
+models had been compared at one point that suited the fine-tuned one. E3 scored the same
+kind of run against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
+E4 trains on 353 of the 413 scaled frames, holding 60 out, and exists to separate "the
+data is poor" from "there was not enough of it".
+
+Three DeepForest details that each cost hours:
+
+- `config.score_thresh` never reaches the model. `model.model.score_thresh` does.
+- `evaluate()` is deprecated in 2.0 and reports no mAP. Use `trainer.validate()`.
+- `trainer.validate()` returns only losses unless
+  `config.validation.val_accuracy_interval` is 1. It defaults to 20 and a standalone
+  validate runs at epoch 0, so the full pass runs and the metrics are skipped.
+
+### What is local and stays local
+
+Measurement written to answer a question for us stays on disk; only the result goes out,
+by message. That covers `docs/PROJECT_STATE.md`, `docs/TASKS.md`, `docs/experiments.md`,
+the working notebooks, `results/dataset_scaled/chunks/`, and `results/training/`.
+
+### Ground rules, each learned the hard way
+
+1. The pipeline works from the **image alone**: the screenshot and its paired clean
+   original. Survey counts are **never** a pipeline input.
+2. The survey data is for **validation only**. Feeding it in and scoring against it makes
+   the score meaningless. This happened once already, the count-prior.
 3. Ground truth for dot counts is **`category_sum`**, never `total_birds`.
-4. Verify **spatially**, not just by count. A matching count can be right for the
-   wrong reasons.
-5. Do not tune on the four old study images. That is how the colour thresholds
-   overfitted. Use the 63-pair stratified benchmark.
-6. **Score detection with the hand labels, not with counts.** A count ratio cannot
-   see whether a dot sits on a marker: the pipeline reads 1.24x median on counts and
-   0.138 precision per dot. Counts stay useful for coverage across 60 frames, but a
-   change is only an improvement if `eval_localisation.py` says so.
-7. **Do not tune the `dot_candidates` band constants against the 63-frame benchmark.**
-   They are scored on it. That is the count-prior mistake and the self-recovery
-   mistake for a third time. Re-derive them from `data/labels/`.
-
----
+4. Verify **spatially**, not by count. A matching count can be right for the wrong
+   reasons: one frame carries a `category_sum` of 450 with no dots on the image at all.
+5. Do not tune on the four old study images, and do not tune the `dot_candidates` band
+   constants against the 63-frame benchmark. They are scored on it. Re-derive from
+   `data/labels/`.
+6. **Score detection with the hand labels, not with counts.** A count ratio cannot see
+   whether a dot sits on a marker.
+7. **Say what a number was scored against, above the number.** E1 and E3 reached opposite
+   conclusions on the same data because one scored against our own annotations and the
+   other against people.
+8. **A cached metrics file is not a substitute for running the stage.** Reading detection
+   counts from `results/eval_detection.csv` rather than running detection produced a
+   confident, wrong conclusion about the funnel.
+9. **Every shipped figure comes from a generator that runs the live path**, and its
+   numbers must match the current `eval_localisation.py` run. Two stale figures have
+   already misled a reviewer.
+10. **No commits until the piece of work is complete**, then one detailed PR. No AI
+    attribution anywhere in commits, PR bodies or docs.
 
 ## Reference Docs
 
