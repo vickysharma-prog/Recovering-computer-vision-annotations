@@ -1459,6 +1459,201 @@ holding two dots each match the dialog's stated count exactly and are wrong on e
 
 ---
 
+## Session 2026-08-18: review of PR #10, and the export decisions it settled
+
+No code changed. This session answered a mentor review and measured the three things the
+answers rested on.
+
+### The red ring Josh asked about was capacity, not colour
+
+He asked why the figure's first sample is wrong when colour should have caught it. It is
+not a colour failure. For the dot at `(500,238)` on `5745`, colour never offered the class
+it received:
+
+```
+candidate rows   ROSP site 12.9    ROSP bird 25.3    BCNH site 10.9
+not a candidate  LAGU sit  40.0
+```
+
+All three candidates were unavailable: ROSP site 62 stated and 62 assigned, BCNH site 2
+and 2, ROSP bird stated 0. `_BLOCKED_RETRY` then widened to every row inside
+`_COLOR_REJECT` and picked LAGU sit. The hand labels put 60 real dots on ROSP site, so two
+wrong ones took the last slots and pushed a real one out.
+
+Josh's response was that a dot should not be able to fall to a class whose colour was
+rejected. Measured with the existing flag, he is right and it is nearly free:
+
+```
+BLOCKED_RETRY=1   0.703   (725/1031, pooled over 12 frames)
+BLOCKED_RETRY=0   0.693   (714/1031)
+```
+
+Eleven dots. The default becomes `0`, folded into the mapping work.
+
+### Species coverage is worse per dot than per row
+
+The 0.771 figure counts legend rows. The CSV's label column is written per dot.
+
+```
+rows : name 197/218  = 0.904    species 168/218  = 0.771
+dots : name 5865/6423 = 0.913   species 4160/6423 = 0.648
+```
+
+Four dense frames carry nearly all of the gap: `0216` 0/1033, `0730` 0/430, `0406`
+105/371, `0242` 0/51. Their failing rows read as `ad` or `imm`, the category word without
+the species code in front of it, which is the Name-column geometry already on the
+do-not-retry list. Across the four, **22 rows are unresolved and naming them recovers
+about 1,500 dots**, so the unit of repair is the row.
+
+### `nest` and `ad` are invented by the matcher, not read by OCR
+
+The parser steps past the table's last real row at the row pitch, so on `5745` row 12
+lands on the horizontal scrollbar and row 13 on the dialog's bottom edge. Raw OCR there is
+`'es ee'` and `'ee'`. `_parse_class_text` fuzzy-matches the leading token to `_CATEGORIES`
+at `max_dist=2`, and `ad` is a two-character word in that list, so any one- or
+two-character noise becomes `ad`. `'|'`, `'4'` and `'a'` all return `ad`.
+
+Accuracy cost is zero, because `tail` capacity already gives both rows nothing. The damage
+is to the figures and to species coverage.
+
+### The export label policy, decided
+
+Export every dot, and say which labels are real:
+
+```
+label             LAGU site  |  Bird
+species_resolved  true       |  false
+frame, legend_row            <- carried on every row
+```
+
+Dropping the unresolved dots would discard good coordinates over a text problem that
+detection does not care about, since DeepForest's bird model trains on a single class.
+Writing `Bird` silently would hide which species are real. `frame + legend_row` is the
+stable key, so one row corrected fixes every dot on it. That is also the cheapest form of
+the review Josh proposed: 22 rows instead of 1,500 dots.
+
+The first CSV covers the 25 frames, which is the sample he asked to look at. At corpus
+scale (~8,500 images pass selection) the by-hand argument stops working, and the two
+candidate levers are the Name-column geometry fix and propagating names across frames of
+the same survey. Neither is measured yet.
+
+---
+
+## Session 2026-08-20 to 21: the dataset, at two scales, and what training says about it
+
+The pipeline stopped at classification. Every dot it produced sat in screenshot
+coordinates, and a model trains on the originals. Two stages were missing between a
+measured pipeline and a dataset anyone can use. Both now exist, and the dataset has been
+built twice: once on the 25 benchmark frames, once on 413 drawn fresh.
+
+### Mapping, and the one trap in it
+
+`align.H` maps screenshot pixels to work-scale original pixels, not to the original,
+because the original is downscaled before SIFT runs. The full-resolution coordinate needs
+`perspectiveTransform(p, H) / res.scale`.
+
+Dropping the divide returns coordinates that are internally consistent, plausibly sized,
+and wrong by a factor of `scale`. On `5745` that is roughly half. Nothing raises. It was
+caught by drawing the dots on the photograph and looking, which is the only way it could
+have been.
+
+Verified on real frames: `5745`, `0027` and `00825` map fully in bounds, and at 4x zoom
+the mapped detections and the mapped hand labels both sit on the birds along the
+vegetation edge.
+
+### Box size, and two wrong answers before the right one
+
+The survey recorded a point per bird and never an extent, so no box size can be read off
+the data. It has to be measured, and per frame: the EXIF shows focal lengths from 28mm to
+300mm across these frames, so the same species spans 10px on one photograph and 41px on
+another.
+
+**Spacing between dots** was the first attempt. It measures crowding: nearest-neighbour
+distance runs 13.6px to 215px while the birds differ about twofold.
+
+**An equivalent diameter** was the second. For a bird twice as long as it is wide, that
+diameter is 0.71 of the length, so every box came from 70% of the bird. On `426` the ibis
+measures 42px long where the equivalent diameter reads 20px, and 0.61m of White Ibis at
+about 1.5cm per pixel is 41px.
+
+`src/birdsize.py` now takes the long side of the component's minimum-area rectangle.
+Dividing known body lengths by what it measures gives 1.3 to 4.0 cm per pixel, and the
+EXIF explains that spread rather than merely agreeing with it.
+
+Judging the result from three frames is how the flat 100px box survived as long as it did:
+it looked defensible on the sparse frames and was four to eight times too large on the
+dense ones. The figure now draws all 25.
+
+### The dataset, and the funnel written down
+
+`scripts/export_dataset.py` recomputes the funnel rather than quoting it, because the 25
+had been repeated for weeks without living in any code:
+
+```
+63  benchmark frames -> 60 cached -> 31 pass selection -> 28 dialog -> 25 exported
+```
+
+Writing it down found a bug that would have shipped. The three frames excluded for a wrong
+dialog box had their names reconstructed from the trailing digits in the docs, the guessed
+prefixes matched nothing, and `0507` put 113 dots into the dataset from a frame already
+known to be wrong.
+
+A first pass also concluded the documented funnel double-counted, and that was wrong: it
+read detection counts from `results/eval_detection.csv` rather than running detection, and
+that file predates the current detector. **A cached metrics file is not a substitute for
+running the stage.**
+
+### Scale: 413 frames, and the numbers that did not move
+
+Every figure until now came from those 25 frames, and those 25 are the frames every
+decision was checked against. The scaled run took 1,197 candidates stratified across seven
+survey years and three density bands, minus the 12 carrying hand labels.
+
+```
+1,076 pairs -> 458 pass selection (43%) -> 413 exported -> 118,270 boxes
+```
+
+```
+                    25 frames      413 frames
+species resolved      0.648          0.650
+box measured on        96%            98% of frames
+distinct species        19             45
+distinct classes        44            380
+```
+
+Selection passing 43% rather than 52% is the honest figure: the small benchmark drew three
+frames per year-and-band cell and this draws 57.
+
+One pattern the small set could not have shown. Species resolution varies by survey year,
+not by chunk: 0.751 in 2013 against 0.484 in 2015, over 87,000 dots. The dialog rendering
+changed across years, and `attach_class_names` reads gridline geometry. Worth knowing
+before anyone tries to improve OCR in general.
+
+### Training, and why the first result was wrong
+
+Written up in `docs/training_analysis.md`. Four runs.
+
+E1 trained on 18 frames and scored against the recovered annotations: F1 0.225 to 0.267,
+an apparent 18% gain. E2 swept the threshold and showed that comparison sat at one point
+suiting the fine-tuned model; best against best is +7%. E3 scored the same kind of run
+against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
+
+**Same data, same architecture, opposite conclusions.** E1 rewarded the model for learning
+the pipeline's habits. Reporting it alone would have claimed a gain a reviewer could
+disprove.
+
+E4 exists to separate "the data is poor" from "there is not enough of it". It trains on
+353 of the 413 and holds 60 out.
+
+### Three DeepForest details that cost hours
+
+`config.score_thresh` never reaches the model; `model.model.score_thresh` does.
+`evaluate()` is deprecated in 2.0 and reports no mAP. `trainer.validate()` returns only
+losses unless `config.validation.val_accuracy_interval` is set to 1, because the default
+is 20 and a standalone validate runs at epoch 0.
+
+---
+
 ## How to Resume
 
 ```bash

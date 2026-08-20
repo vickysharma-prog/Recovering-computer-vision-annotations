@@ -135,3 +135,41 @@ That is why the failures group the way they do. Bright dead branches on dark man
 **48. A class holding two or three dots tells you nothing.** On one frame every row with 40 dots or more is right almost throughout, and both rows holding two dots are wrong on every dot. Per-class accuracy on a tiny class is noise, and a frame with few classes scores high for that reason alone — one reads 1.000 with two classes. Report the denominator beside every such number.
 
 **49. A proxy can rank correctly and still read high.** With hand labels on only 4 of 25 frames, the standing check is a per-species tally against the survey manifest, which the pipeline never reads. Three frames were then labelled deliberately to test it, chosen to span its range. It predicted 1.000, 0.995 and 0.403; they measured 0.877, 0.730 and 0.193. The ordering holds, so the proxy can say which frames are weak. The values do not, so it cannot say how weak.
+
+---
+
+## Mapping the dots onto the photographs
+
+**50. The transform does not land where you think it lands.** `align.H` maps screenshot pixels to *work-scale* original pixels, not to the original, because the original is downscaled before SIFT runs. The full-resolution coordinate needs `perspectiveTransform(p, H) / res.scale`. Drop the divide and the coordinates stay internally consistent, look plausibly sized, and sit in the wrong part of the photograph by a factor of `scale`. Nothing raises. The only way to catch it is to draw the dots on the photograph and look.
+
+**51. Spacing between dots is not bird size.** The first attempt at a box size derived it from how far apart the dots sit. That measures crowding: nearest-neighbour distance runs 13.6px on a packed colony to 215px on a sparse frame, a sixteenfold spread, while the birds themselves differ about twofold. A box built on it is four times too large on exactly the sparse frames where a bird is easiest to see.
+
+**52. An equivalent diameter is not a length.** The second attempt measured the bird as a circle of the same area as its blob. For a bird twice as long as it is wide, that diameter is 0.71 of the length, so every box was built from about 70% of the bird and cut it in half. On one frame the ibis measures 42px long where the equivalent diameter reads 20px, and 0.61m of White Ibis at about 1.5cm per pixel is 41px. The long side of a minimum-area rectangle is the measurement that agrees with the species.
+
+**53. Judging a box size from three frames is how a wrong one survives.** A flat 100px box looked defensible on the sparse frames and was four to eight times too large on the dense ones. It took drawing all 25 frames on one page to see it. The same figure now draws every exported frame, because a sample that happens to contain the easy cases will confirm whatever it is shown.
+
+**54. The measurement has to agree with something outside itself.** Dividing known species body lengths by the measured bird size gives 1.3 to 4.0 cm per pixel, which is what these surveys fly. The EXIF then explains the spread rather than merely agreeing with it: focal lengths from 28mm to 300mm and pixel pitches from 4.4 to 6.6um predict exactly the tenfold range in bird size the measurement finds. A number that only agrees with itself is not evidence.
+
+---
+
+## Training against the right ground truth
+
+**55. Training on your own annotations and scoring against them measures agreement, not accuracy.** One run reported F1 0.225 to 0.267 and looked like an 18% gain. The same kind of run scored against 1,647 hand-placed dots instead put the fine-tuned model behind the pretrained one, 0.360 against 0.369. Same data, same architecture, opposite conclusions. Fine-tuning teaches the model the pipeline's habits, and scoring against the pipeline rewards exactly that.
+
+**56. One threshold can flatter whichever model suits it.** That 18% compared both models at 0.1, which sits near the fine-tuned model's optimum and not the pretrained one's. Each at its own best threshold gives 0.267 against 0.250, so +7%. Both numbers are real and they answer different questions; lead with the conservative one and report the sweep.
+
+**57. Fine-tuning on noisy labels lowers confidence rather than raising error.** Above threshold 0.3 the fine-tuned model's recall collapsed to 0.093 where the pretrained model held 0.161. It finds more birds and scores every one of them lower. That is what training on labels containing false positives does, and it shows up as a shifted operating range rather than as an obvious mistake.
+
+**58. Hand labels seeded from the pipeline lean toward it.** Ten of the twelve label sets began as the pipeline's own output for a person to confirm, delete or add. They deleted 107 of 116 on one frame and added 81 on another, so the review was real, but the labels still favour the pipeline. That makes any test against them generous to us, which is worth saying out loud when the pipeline fails it anyway.
+
+---
+
+## DeepForest, three things that cost hours
+
+**59. `config.score_thresh` never reaches the model.** Setting it leaves `model.model.score_thresh` untouched, so a run configured for 0.3 silently evaluates at 0.1. Both models used the same wrong value, so that comparison survived, but the recorded configuration was wrong. Set the attribute on the model.
+
+**60. `evaluate()` is deprecated and reports no mAP.** DeepForest 2.0 asks for `trainer.validate()` instead. Its signature is also `evaluate(csv_file, iou_threshold, root_dir)`, so passing the tile directory positionally lands it in `iou_threshold`, which fails quietly rather than loudly.
+
+**61. `trainer.validate()` returns only losses unless you ask for the metrics.** mAP and precision and recall are computed only when `(current_epoch + 1) % val_accuracy_interval == 0`. The default interval is 20 and a standalone validate runs at epoch 0, so the check never passes: the full pass runs, eight minutes go by, and only the losses come back. Set `config.validation.val_accuracy_interval = 1`.
+
+**62. A public method whose defaults crash is easy to mistake for a feature.** `Model.create_anchor_generator` offers sizes down to 8px, which looked like the fix for small boxes. Its own default is a single size tuple against five FPN levels and raises an assertion, and `create_model` never calls it. Small boxes train regardless: torchvision's RetinaNet matches with `allow_low_quality_matches=True`, so every ground-truth box is assigned its best anchor whatever the IoU.
