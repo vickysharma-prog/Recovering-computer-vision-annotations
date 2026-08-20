@@ -190,6 +190,7 @@ def main() -> None:
                       cached=False, detected=0, ratio=None, accepted=False,
                       dialog_found=False, legend_rows=0, dots_assigned=0,
                       dots_exported=0, dropped_out_of_bounds=0,
+                      legend_count_sum=None, legend_rows_counted=0,
                       bird_px=None, box_px=None, box_measured=False,
                       excluded_reason="")
 
@@ -242,6 +243,13 @@ def main() -> None:
         # Survived the funnel, so it is worth reading the dialog properly now.
         entries = legend_for(shot)
         record["legend_rows"] = len(entries)
+        # What the dialog itself says, read off the image. Distinct from
+        # survey_count, which comes from the published CSV and which the pipeline
+        # never reads: comparing the two says whether the count OCR is working
+        # without going outside the image for the answer.
+        counted = [e.count for e in entries if e.count is not None]
+        record["legend_count_sum"] = sum(counted) if counted else None
+        record["legend_rows_counted"] = len(counted)
         if not entries:
             record["excluded_reason"] = "legend did not parse"
             finish(record)
