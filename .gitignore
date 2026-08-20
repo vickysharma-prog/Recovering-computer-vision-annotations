@@ -263,4 +263,5 @@ testgdal/
 results/figures/full/
 docs/experiments.md
 results/dataset_scaled/chunks/
+results/dataset_scaled/annotations_full.csv
 results/training/
