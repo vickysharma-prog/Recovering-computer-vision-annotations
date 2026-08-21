@@ -266,3 +266,4 @@ results/dataset_scaled/chunks/
 results/dataset_scaled/annotations_full.csv
 results/training/
 notebook/e4_training.ipynb
+notebook/e4_training_kaggle.ipynb

@@ -159,7 +159,164 @@ That is worth stating on its own, before any training result. Every earlier numb
 from 25 frames, and those 25 are the frames every decision was checked against. They were
 not an artefact of the sample they were measured on.
 
-Training on 353 of the 413, holding 60 out, is running. Results will be added here.
+### The training run
+
+349 frames train, 60 held out, three epochs, 2 hours 43 minutes on a T4. Tiling turned
+118,270 boxes into 162,598 on 18,467 tiles, because a 0.15 overlap writes a box that
+straddles a tile edge into both tiles. Four frames failed to tile and were dropped, all
+from the same card.
+
+```
+train    140,704 boxes on 349 frames
+test      21,894 boxes on  60 frames, 2,494 tiles
+```
+
+The 60 held-out frames are not 60 frames of the corpus. All 413 exported frames passed
+`select.accept_frame`, so both the training and the test set are drawn from the 43% of
+images the pipeline accepts, and both carry that same selection bias. This measures the
+model on the frames the pipeline is willing to hand it, not on the archive.
+
+Same test set before and after. Only the model changes.
+
+```
+                  pretrained    fine-tuned
+mAP                 0.008         0.022
+mAP@50              0.036         0.087
+
+score >= 0.05   P   0.115         0.186
+                R   0.356         0.414
+score >= 0.10   P   0.194         0.270
+                R   0.331         0.396
+score >= 0.20   P   0.304         0.364
+                R   0.274         0.307
+score >= 0.30   P   0.356         0.416
+                R   0.207         0.122
+
+best F1             0.288         0.333      both at 0.20
+```
+
+**mAP@50 rises 2.4 times, from 0.036 to 0.087.** Quote this one first. mAP integrates
+over the whole confidence curve instead of fixing a cutoff, so no choice of threshold can
+flatter it, and it accumulates over the epoch, so the batch-size difference described
+below cannot reach it. E1 moved nothing on mAP from 18 frames. **353 frames answer the
+question E4 was asked: 18 was too few.**
+
+The threshold table says the same thing from a second direction. **At three of the four
+thresholds, precision and recall both rise.** That matters more than either number alone.
+A model that only gained recall would be drawing more boxes and catching a few more birds
+by volume. Gaining both means better boxes, not more of them.
+
+```
+F1        0.05    0.10    0.20    0.30
+before    0.174   0.245   0.288   0.262
+after     0.257   0.321   0.333   0.188
+```
+
+Best against best is 0.288 to 0.333, a 16% relative gain, with both models peaking at
+0.20. The stronger statement is that **the fine-tuned model beats the pretrained model's
+best score at two separate thresholds**, 0.321 at 0.10 and 0.333 at 0.20. Winning once
+could be one cutoff happening to suit it. Winning at two is harder to explain that way,
+which is the same argument E2 rested on.
+
+**The gain is spread across the test set, not carried by a few frames.** Counting per
+frame, the fine-tuned model finds more birds on 40 of the 60 held-out frames, fewer on 15,
+and the same number on 5. An average that came from three spectacular frames and 57 flat
+ones would mean something quite different.
+
+**These are small numbers in absolute terms and a reviewer will say so first.** An mAP@50
+of 0.087 is a weak detector, and `map_small` is 0.011. The birds measure 16 to 54 pixels
+on the original photographs, which puts nearly all of them in the small-object regime
+where mAP is punishing and where a few pixels of box error costs the whole match. The
+gain is real and the base is low. Both belong in any sentence that quotes it.
+
+### Recall still collapses above 0.30, at any dataset size
+
+Recall at 0.30 falls from 0.207 to 0.122. E2 and E3 both found this on the 18-frame
+model, and twenty times the data did not remove it. Training on annotations that contain
+false positives lowers what the model will assert. It finds more birds and scores each one
+lower, which moves its useful range down rather than breaking it. Anyone deploying this
+checkpoint should run it near 0.10 to 0.20 and not at the default.
+
+That reproduces across two dataset sizes and two test sets, so it is a property of
+training on recovered labels, not an accident of one run.
+
+### What it looks like on a photograph
+
+Five held-out frames drawn whole, pretrained beside fine-tuned, both at score 0.10, with a
+close-up on the densest part of each. These are the five largest gains of the 60, and the
+figure says so rather than passing them off as a random sample.
+
+```
+frame                          labelled   pretrained    fine-tuned
+21June15Camera1-Card3-01343      1,611    542 / 2,445   1,268 / 2,598
+18June13Camera1-Card2-0296       1,014    200 / 1,103     373 /   828
+28May12Camera2-Card1-0333          499     71 /   302     149 /   352
+25May13Camera2-Card4-1442          493    218 /   948     316 /   893
+23May13Camera2-Card1-0730          428     76 /   791     149 /   951
+```
+
+Read as birds found out of boxes drawn. The first frame is the largest move, recall 0.34 to
+0.79 on 1,611 birds. The second is the more useful one to show: the fine-tuned model drew
+**fewer** boxes, 828 against 1,103, and still found nearly twice as many birds. That is the
+whole claim in one frame. It is not drawing more, it is drawing better.
+
+```
+results/figures/fig17_e4_before_after_01343.png    the largest gain
+results/figures/fig18_e4_before_after_0296.png     fewer boxes, more birds
+results/e4/                                        the numbers behind both
+```
+
+The counts here are lower than the per-frame totals in the tile scan because tiling
+duplicates a bird that straddles a tile edge, and a whole photograph counts it once.
+
+Two things in the figures are worth looking at rather than reading past.
+
+**The false positives sit outside the colony.** On `01343` the unmatched boxes cluster in
+the surrounding vegetation, not among the birds, in both models. Whatever is costing
+precision is texture in the grass, not confusion between neighbouring birds.
+
+**Some of the green boxes are not birds.** In the bottom-right and along the right edge of
+`0296`, recovered annotations form neat rows that read as text. That is map ink the
+detector picked up because the painted labels share the markers' palette colours, a known
+limit of the recovery stage. It is in the training data, and the figure shows it.
+
+### What this result does not say
+
+Every number above is scored against the recovered annotations. The model trained on our
+pipeline's output and was tested against our pipeline's output on different frames. It
+measures how well the model reproduces the pipeline, which is exactly the circularity E3
+was built to expose, and E3 is the run where fine-tuning lost.
+
+Two things keep it from being empty. The test frames are held out, so the model is
+reproducing the pipeline on photographs it never saw. And the pretrained bird model is a
+real detector trained on far more data, so a 2.4 times gain over it is not trivial.
+
+**One control was missed, then checked separately.** The pretrained model was validated at
+batch size 1 and the fine-tuned one at batch size 4, because training set the batch size
+and it carried into the validation passes afterwards. mAP accumulates over the epoch and
+cannot be affected, but precision and recall were not controlled for it.
+
+So both models were run again over all 2,494 held-out tiles one tile at a time, same code,
+same threshold, matched greedily at IoU 0.4.
+
+```
+                 Cell C table      independent scan
+pretrained   P      0.194               0.195
+             R      0.331               0.270
+fine-tuned   P      0.270               0.281
+             R      0.396               0.363
+```
+
+Precision agrees to 0.001 on the pretrained model, which is the figure the batch-size
+question was about. Recall reads lower for **both** models, by 0.061 and 0.033, so that gap
+comes from a different matching rule and not from batch size. Both measurements put the
+fine-tuned model ahead on precision and recall together. The scan makes the gain larger,
+F1 0.226 to 0.317, so the 16% in the table is the conservative reading.
+
+E3 already reported the other half of this. Against the hand labels, on the 18-frame
+model, fine-tuning lost. The two runs answer different questions and both stand: E3 says
+what the recovered data is worth against people, E4 says what more of it is worth against
+itself.
 
 ---
 

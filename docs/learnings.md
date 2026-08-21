@@ -173,3 +173,19 @@ That is why the failures group the way they do. Bright dead branches on dark man
 **61. `trainer.validate()` returns only losses unless you ask for the metrics.** mAP and precision and recall are computed only when `(current_epoch + 1) % val_accuracy_interval == 0`. The default interval is 20 and a standalone validate runs at epoch 0, so the check never passes: the full pass runs, eight minutes go by, and only the losses come back. Set `config.validation.val_accuracy_interval = 1`.
 
 **62. A public method whose defaults crash is easy to mistake for a feature.** `Model.create_anchor_generator` offers sizes down to 8px, which looked like the fix for small boxes. Its own default is a single size tuple against five FPN levels and raises an assertion, and `create_model` never calls it. Small boxes train regardless: torchvision's RetinaNet matches with `allow_low_quality_matches=True`, so every ground-truth box is assigned its best anchor whatever the IoU.
+
+---
+
+## What scale settled
+
+**63. "The data is poor" and "there is not enough of it" are different problems and look identical from one run.** 18 frames moved mAP by nothing, and that reads as bad data. The same pipeline, the same recipe and the same architecture at 349 frames moved mAP@50 from 0.036 to 0.087. Nothing about the data changed between the two runs except how much of it there was. Any conclusion drawn from a small training set is about the size of that set until a larger one says otherwise.
+
+**64. Precision and recall rising together is the claim; either one alone is not.** A model that only gained recall would be drawing more boxes and catching a few more birds by volume. On three of four thresholds both rose. The clearest single frame drew **fewer** boxes than the pretrained model, 828 against 1,103, and found nearly twice as many birds, 373 against 200.
+
+**65. Beating the other model's best score at two thresholds beats winning at one.** Best against best was 0.288 to 0.333. The stronger statement is that the fine-tuned model passed 0.288 at both 0.10 and 0.20. One win can be a cutoff that happens to suit it; two is harder to explain that way.
+
+**66. Batch size set for training carries into every validation pass after it.** The pretrained model was scored at batch size 1 and the fine-tuned one at 4, because `config.batch_size = 4` was set before `fit` and never reset. mAP accumulates over the epoch and is immune, but precision and recall were uncontrolled, and best F1 is built entirely from those two. Re-running both models one tile at a time put pretrained precision at 0.195 against 0.194, so the comparison held. The lesson is to notice which metric a headline actually rests on, not to trust that a caveat written two paragraphs down protects it.
+
+**67. Count the frames the gain appears on, not just the average.** 40 of 60 held-out frames improved, 15 got worse, 5 stayed level. An identical average built from three spectacular frames and 57 flat ones would mean something quite different, and no pooled number distinguishes them.
+
+**68. A figure drawn honestly shows your own noise as well as your result.** The before-and-after overlays put unmatched predictions in the vegetation around a colony rather than among the birds, which says grass texture costs precision and neighbour confusion does not. They also show recovered annotations in neat rows along one frame's edge, which are painted map labels sharing the markers' palette colours. That noise is in the training data, and hiding it would have made a weaker figure and a less trustworthy one.
