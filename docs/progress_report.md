@@ -1642,7 +1642,11 @@ against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
 the pipeline's habits. Reporting it alone would have claimed a gain a reviewer could
 disprove.
 
-E4 exists to separate "the data is poor" from "there is not enough of it".
+That left one question open. E1 and E3 both trained on 18 frames, which is very little to
+shift a model already trained on far more, so a weak result could mean the recovered data
+is not good enough **or** simply that there was too little of it to teach anything. Those
+two look identical from one run. E4 tells them apart by changing one thing: same pipeline,
+same settings, twenty times the frames.
 
 ### E4 finished: 18 frames were too few
 

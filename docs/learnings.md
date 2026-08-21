@@ -178,7 +178,7 @@ That is why the failures group the way they do. Bright dead branches on dark man
 
 ## What scale settled
 
-**63. "The data is poor" and "there is not enough of it" are different problems and look identical from one run.** 18 frames moved mAP by nothing, and that reads as bad data. The same pipeline, the same recipe and the same architecture at 349 frames moved mAP@50 from 0.036 to 0.087. Nothing about the data changed between the two runs except how much of it there was. Any conclusion drawn from a small training set is about the size of that set until a larger one says otherwise.
+**63. A small training set cannot tell you whether your data is bad or simply scarce.** 18 frames moved mAP by nothing, which reads as bad data and nearly got written up that way. The same pipeline, the same recipe and the same architecture at 349 frames moved mAP@50 from 0.036 to 0.087. Nothing about the data changed between the two runs except how much of it there was. A weak result on a small training set is a fact about the size of that set until a larger one says otherwise.
 
 **64. Precision and recall rising together is the claim; either one alone is not.** A model that only gained recall would be drawing more boxes and catching a few more birds by volume. On three of four thresholds both rose. The clearest single frame drew **fewer** boxes than the pretrained model, 828 against 1,103, and found nearly twice as many birds, 373 against 200.
 

@@ -132,8 +132,13 @@ are unused. Classification is measured separately at 0.781 per dot.
 
 ## E4: was 18 frames simply too few?
 
-That is the open question. A model pretrained on far more data is hard to move with 18
-frames, and E3 cannot separate "the data is poor" from "there is not enough of it".
+E1 and E3 both trained on 18 frames. That is very little to shift a model already trained
+on far more, so a weak result there has two possible readings: the recovered data is not
+good enough to teach a detector, **or** there was too little of it to teach anything yet.
+From one run those two look the same, and choosing between them by argument is guesswork.
+
+E4 settles it by changing one thing. Same pipeline, same architecture, same learning rate,
+tile size, batch size and split rule. Twenty times the frames.
 
 So the dataset was scaled. 1,197 candidates drawn stratified across seven survey years and
 three density bands, minus the 12 frames carrying hand labels, put through the same
