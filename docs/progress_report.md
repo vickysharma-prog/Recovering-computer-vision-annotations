@@ -1642,8 +1642,7 @@ against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
 the pipeline's habits. Reporting it alone would have claimed a gain a reviewer could
 disprove.
 
-E4 exists to separate "the data is poor" from "there is not enough of it". It trains on
-353 of the 413 and holds 60 out.
+E4 exists to separate "the data is poor" from "there is not enough of it".
 
 ### E4 finished: 18 frames were too few
 
@@ -1654,7 +1653,7 @@ thresholds rather than one. Counting per frame it finds more birds on 40 of the 
 on 15, level on 5, so the gain is spread rather than carried by a few colonies.
 
 E1 moved nothing on mAP from 18 frames. The same pipeline, the same architecture and the
-same recipe at 353 frames moved it 2.4 times. **The data was not the problem; the amount
+same recipe at 349 frames moved it 2.4 times. **The data was not the problem; the amount
 of it was.** 413 frames are 2% of the archive, and about 8,700 frames pass selection
 corpus-wide.
 

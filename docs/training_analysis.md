@@ -198,7 +198,7 @@ best F1             0.288         0.333      both at 0.20
 **mAP@50 rises 2.4 times, from 0.036 to 0.087.** Quote this one first. mAP integrates
 over the whole confidence curve instead of fixing a cutoff, so no choice of threshold can
 flatter it, and it accumulates over the epoch, so the batch-size difference described
-below cannot reach it. E1 moved nothing on mAP from 18 frames. **353 frames answer the
+below cannot reach it. E1 moved nothing on mAP from 18 frames. **349 frames answer the
 question E4 was asked: 18 was too few.**
 
 The threshold table says the same thing from a second direction. **At three of the four
@@ -260,10 +260,15 @@ Read as birds found out of boxes drawn. The first frame is the largest move, rec
 **fewer** boxes, 828 against 1,103, and still found nearly twice as many birds. That is the
 whole claim in one frame. It is not drawing more, it is drawing better.
 
+The generator is section 8 of `notebook/deepforest_model_training.ipynb`. It draws the
+five largest gains and names them by rank and frame; the two kept here were renamed into
+the repository's figure numbering, and the pixels are unchanged.
+
 ```
-results/figures/fig17_e4_before_after_01343.png    the largest gain
-results/figures/fig18_e4_before_after_0296.png     fewer boxes, more birds
-results/e4/                                        the numbers behind both
+generator output                shipped as
+e4_frame_1_21June15...png   ->  results/figures/fig17_e4_before_after_01343.png
+e4_frame_2_18June13...png   ->  results/figures/fig18_e4_before_after_0296.png
+                                results/e4/  holds the numbers behind both
 ```
 
 The counts here are lower than the per-frame totals in the tile scan because tiling
