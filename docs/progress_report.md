@@ -1642,8 +1642,48 @@ against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
 the pipeline's habits. Reporting it alone would have claimed a gain a reviewer could
 disprove.
 
-E4 exists to separate "the data is poor" from "there is not enough of it". It trains on
-353 of the 413 and holds 60 out.
+That left one question open. E1 and E3 both trained on 18 frames, which is very little to
+shift a model already trained on far more, so a weak result could mean the recovered data
+is not good enough **or** simply that there was too little of it to teach anything. Those
+two look identical from one run. E4 tells them apart by changing one thing: same pipeline,
+same settings, twenty times the frames.
+
+### E4 finished: 18 frames were too few
+
+349 frames train, 60 held out, three epochs, 2h43m on a T4. mAP@50 rose 2.4 times, 0.036
+to 0.087. Precision and recall rise together at 0.05, 0.10 and 0.20, best F1 0.288 to
+0.333, and the fine-tuned model passes the pretrained model's best score at two separate
+thresholds rather than one. Counting per frame it finds more birds on 40 of the 60, fewer
+on 15, level on 5, so the gain is spread rather than carried by a few colonies.
+
+E1 moved nothing on mAP from 18 frames. The same pipeline, the same architecture and the
+same recipe at 349 frames moved it 2.4 times. **The data was not the problem; the amount
+of it was.** 413 frames are 2% of the archive, and about 8,700 frames pass selection
+corpus-wide.
+
+**Recall above 0.30 still collapses**, 0.207 to 0.122, exactly as E2 and E3 found on the
+18-frame model. Twenty times the data did not fix it. Training on annotations that contain
+false positives lowers what the model will assert, so its useful range moves down instead
+of breaking. That now reproduces across two dataset sizes and two test sets.
+
+**A control was missed and then checked.** The validation loop scored the pretrained model
+at batch size 1 and the fine-tuned one at batch size 4, because training set the batch
+size and it carried through. mAP accumulates over the epoch and cannot be affected;
+precision and recall were not controlled for it, and best F1 is built entirely from those
+two. A second pass ran both models over all 2,494 held-out tiles one tile at a time:
+pretrained precision 0.195 against the loop's 0.194, and the F1 gain came out larger,
+0.226 to 0.317. So mAP@50 leads and the F1 figure is the conservative one.
+
+**The figures show the residual problems as well as the gain.** On `01343` the unmatched
+predictions cluster in the vegetation around the colony rather than among the birds, so
+what costs precision is grass texture, not confusion between neighbours. On `0296` some
+recovered annotations form neat rows that read as text: map ink the detector picked up
+because painted labels share the markers' palette colours. That noise is in the training
+data and the figure does not hide it.
+
+Kept: `results/e4/` and two figures, `fig17_e4_before_after_01343.png` (the largest gain)
+and `fig18_e4_before_after_0296.png` (fewer boxes drawn, nearly twice the birds found).
+The 129 MB checkpoint stays out of the repository.
 
 ### Three DeepForest details that cost hours
 
@@ -1725,12 +1765,37 @@ GPU-hours a week, 9-hour sessions) and can run a notebook in the background with
 Results go in `docs/experiments.md`, which is local. The published summary is
 `docs/training_analysis.md`.
 
-Four runs so far. E1 trained on 18 frames and scored against the recovered annotations:
-F1 0.225 to 0.267. E2 swept the threshold and showed that was +7%, not +18%, because both
-models had been compared at one point that suited the fine-tuned one. E3 scored the same
-kind of run against 1,647 hand-placed dots and the fine-tuned model lost, 0.360 to 0.369.
-E4 trains on 353 of the 413 scaled frames, holding 60 out, and exists to separate "the
-data is poor" from "there was not enough of it".
+Four runs, all finished. E1 trained on 18 frames and scored against the recovered
+annotations: F1 0.225 to 0.267. E2 swept the threshold and showed that was +7%, not +18%,
+because both models had been compared at one point that suited the fine-tuned one. E3
+scored the same kind of run against 1,647 hand-placed dots and the fine-tuned model lost,
+0.360 to 0.369.
+
+**E4 is the answer to whether 18 frames were simply too few. They were.** 349 frames
+train, 60 held out, three epochs, 2h43m on a T4.
+
+```
+                  pretrained    fine-tuned
+mAP@50              0.036         0.087        2.4x
+best F1             0.288         0.333        both at threshold 0.20
+```
+
+Precision and recall rise together at 0.05, 0.10 and 0.20, and the fine-tuned model beats
+the pretrained model's best F1 at two separate thresholds. Per frame it finds more birds
+on 40 of the 60, fewer on 15, level on 5. Above 0.30 its recall still collapses, 0.207 to
+0.122, the same confidence drop E2 and E3 found on the 18-frame model, so twenty times the
+data did not remove it. Run this checkpoint near 0.10 to 0.20, not at the default.
+
+Quote mAP@50 first. The validation loop scored the pretrained model at batch size 1 and
+the fine-tuned one at batch size 4, which cannot touch mAP but was not controlled for
+precision and recall. A separate pass over all 2,494 held-out tiles, both models one tile
+at a time, put pretrained precision at 0.195 against the loop's 0.194 and made the F1 gain
+larger, 0.226 to 0.317. The table is the conservative reading.
+
+Everything E4 measured is against the recovered annotations, so it says more data helps.
+E3 is the run that scored against people. Numbers in `results/e4/`, figures in
+`results/figures/fig17*` and `fig18*`, full write-up in `docs/training_analysis.md`.
+The 129 MB checkpoint is not in the repository.
 
 Three DeepForest details that each cost hours:
 
