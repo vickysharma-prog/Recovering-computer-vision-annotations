@@ -2,15 +2,15 @@
 
 # Weecology : Recovering Bird Annotations from Historical Airborne Imagery
 
-Between 2010 and 2021, surveyors counted birds in Gulf of Mexico aerial photographs using a point-counting tool. The tool drew a coloured dot on the photograph for every bird and saved a screenshot. It never saved the coordinates. What remains is 18,304 screenshots with the annotations baked into the pixels, and the clean high-resolution photographs they were drawn on.
+Between 2010 and 2021, surveyors counted birds in Gulf of Mexico aerial photographs using a point-counting tool. The tool drew a coloured dot on the photograph for every bird and saved a screenshot. It never saved the coordinates. What remains is **18,304 screenshots** carrying 2.81 million bird observations baked into the pixels, and the clean high-resolution photographs they were drawn on.
 
-This project reads the dots back out. It finds each dot, works out which class it belongs to, and maps it onto the original photograph as DeepForest training data.
+This project reads them back out. It finds each dot, determines its species and category from the image's own legend, maps it onto the original photograph, and exports DeepForest-ready training data.
 
 ![the problem](results/cell1_study_images.png)
 
 Left: the screenshot, with the counting tool's dots and its dialog drawn over the photograph. Right: the same photograph, clean. Everything the pipeline needs is on the left, including the legend that says what each marker means.
 
-Data source: `twi-aviandata.s3.amazonaws.com` (Gulf of Mexico avian monitoring, post-Deepwater Horizon).
+Data source: `twi-aviandata.s3.amazonaws.com`, provided by [The Water Institute](https://thewaterinstitute.org/) (Gulf of Mexico avian monitoring, post-Deepwater Horizon).
 
 ## Status
 
@@ -21,18 +21,21 @@ The pipeline runs from the images alone. Survey counts are never an input; the C
 | Registration success | **96.7%**, 0.38px median reprojection error | 60 pairs |
 | Detection precision, on frames the pipeline accepts | **0.30–1.00** per frame | 7 hand-labelled frames |
 | Dot placement error | **0.65px** median | 1,648 hand-labelled dots |
-| Classification, per dot | **0.781** | 885 matched dots, 7 frames |
-| Tests | **211** passing, CI on Python 3.10 and 3.11 | |
+| Classification, per dot | **0.781** | 691 of 885 dots, 7 frames |
+| Legend class names read | **0.904** | 218 legend rows |
+| Exported dataset | **118,270 boxes** across 413 photographs | |
+| Model improvement, mAP@50 | **0.036 → 0.087** | 60 held-out photographs |
+| Tests | **236** passing, CI on Python 3.10 and 3.11 | |
 
 **Detection is finished.** The important part is not a single accuracy figure. It is that every image now carries a check on whether its detections can be trusted, before anything is built from them.
 
-A frame that reports far more dots than the image contains cannot be accurate, whatever is done downstream. That check needs no labels and no survey data, so it runs on every image. Pass rates were measured on the 63-pair benchmark and applied to the band distribution of all **18,252 screenshots**: about **48% of images pass, and they hold roughly 72% of the corpus's dots around 2 million annotations.** That is far more than training a DeepForest model needs, so the recovered set is large enough for the next stage to begin. See [Choosing frames](#choosing-frames).
+A frame that reports far more dots than the image contains cannot be accurate, whatever is done downstream. That check needs no labels and no survey data, so it runs on every image. Pass rates were measured on the 63-pair benchmark and applied to the band distribution of the **18,252 screenshots that carry any dots** (of 18,304 in total): about **48% of images pass, and they hold roughly 72% of the corpus's dots, close to 2 million annotations.** That is far more than training a DeepForest model needs. See [Choosing frames](#choosing-frames).
 
 Both stages are scored against **hand-labelled dot positions**, not counts. The survey gives a count per image and never a coordinate, so until those labels existed there was no way to tell a pipeline that found the right dots from one that found the right *number* of dots in the wrong places. 1,648 dots across 12 frames are labelled in `data/labels/` and scored by `scripts/eval_localisation.py`.
 
 The classification figure quotes seven of those twelve: the frames that both pass the check above and carry a class per dot. Quoting all twelve would mix in five frames the pipeline rejects, which measures a configuration nobody runs.
 
-Mapping the dots onto the original photograph and exporting the DeepForest CSV are next. Those two steps are what turn the recovered dots into deliverable #2.
+**The pipeline is complete end to end.** Recovered dots are mapped onto the original photographs, sized into boxes measured from each frame's own birds, and exported as a DeepForest dataset of **118,270 annotations across 413 photographs**. Fine-tuning DeepForest's bird model on that data improves it on held-out imagery.
 
 ![project progress](results/report_fig/fig_timeline.jpg)
 
@@ -60,45 +63,54 @@ Every screenshot raises two separate questions, handled by different modules.
 
 | Question | Modules |
 |---|---|
-| Where are the dots, and how many? | `align.py` → `subtract.py` |
+| Where are the dots, and how many? | `align.py` → `subtract.py` → `select.py` |
 | Which class is each dot? | `legend.py` → `classify.py` |
+| Where does it belong on the original? | `mapping.py` → `birdsize.py` |
 
 ```mermaid
 flowchart TB
-    subgraph IN["Inputs"]
+    subgraph IN["Inputs: the pipeline reads nothing else"]
+        direction LR
         SS["Screenshot<br/>dots baked into pixels"]
         ORIG["Clean original photograph"]
     end
 
-    subgraph L["legend.py: read the dialog"]
-        LOC["locate_dialog<br/>find the panel as a box"]
-        PAR["parse_legend<br/>colour, shape, 24x24 template"]
-        OCR["attach_class_names<br/>Tesseract + fuzzy match"]
-        LOC --> PAR --> OCR
+    subgraph L["legend.py: what does each marker mean?"]
+        direction TB
+        LOC["locate_dialog<br/>find the panel as a box, anywhere"]
+        PAR["parse_legend + attach_class_names<br/>colour, shape, 24x24 template, name, count"]
+        LOC --> PAR
     end
 
-    subgraph D["align.py + subtract.py: where the dots are"]
-        SIFT["SIFT + RANSAC registration<br/>returns failure, not a bad warp"]
-        DIFF["chromatic image difference"]
-        SPLIT["distance transform<br/>splits merged dots"]
-        SIFT --> DIFF --> SPLIT
+    subgraph D["align.py + subtract.py: where are the dots?"]
+        direction TB
+        SIFT["SIFT + RANSAC registration<br/>refuses rather than return a bad warp"]
+        DIFF["chromatic difference + distance transform<br/>what was added, split back into single dots"]
+        SIFT --> DIFF
     end
 
-    subgraph C["classify.py: which class each dot is"]
-        LAB["Lab colour anchoring<br/>to this image's palette"]
-        NCC["NCC template match<br/>within the colour group"]
-        LAB --> NCC
+    SEL{"select.py: is this frame worth using?<br/>precision ceiling from detected / reported"}
+
+    subgraph C["classify.py: which class is each dot?"]
+        direction TB
+        LABC["LAB colour anchoring<br/>offset measured per legend row"]
+        NCC["NCC template match, capacity per row<br/>no match means no class"]
+        LABC --> NCC
     end
+
+    MAPN["mapping.py + birdsize.py<br/>place on the original, size the box per frame"]
+    OUT["DeepForest CSV<br/>118,270 boxes on 413 photographs"]
 
     SS --> LOC
     SS --> SIFT
     ORIG --> SIFT
-    SPLIT --> LAB
-    OCR --> LAB
-    NCC --> OUT["dot positions + class labels"]
-    OUT --> MAP["map to original<br/>export DeepForest CSV"]
-
-    CSV["Survey CSV"] -.->|"validation only,<br/>never an input"| OUT
+    DIFF --> SEL
+    SEL -->|"accepted, ~48% of images"| LABC
+    SEL -.->|"rejected"| DROP["frame excluded"]
+    PAR --> LABC
+    NCC --> MAPN
+    MAPN --> OUT
+    SURVEY["Survey CSV"] -.->|"validation only,<br/>never an input"| OUT
 ```
 
 ### Reading the dialog
@@ -160,7 +172,7 @@ Verified against hand labels on three frames spanning two density bands and 10 t
 | 7.35 | 0.07 |
 | 14.22 | 0.04 |
 
-Applying the benchmark's per-band pass rates to the band distribution of all 18,252 screenshots: **about 48% of images pass, holding roughly 72% of the corpus's dots.**
+Applying the benchmark's per-band pass rates to the band distribution of the 18,252 screenshots carrying dots: **about 48% of images pass, holding roughly 72% of the corpus's dots.**
 
 Frames that fail are mostly sparse scenes over textured ground. A mangrove colony with nine real markers returned 128 detections, because at this resolution a leaf and a marker are the same handful of pixels. Five ways of filtering those out were measured and none separated them; that is written up in [what did not work](#what-did-not-work). Excluding those frames costs little, because sparse images hold only 6% of the corpus's dots.
 
@@ -200,6 +212,60 @@ Per-dot accuracy, on the seven frames that both pass frame selection and carry a
 
 One older measurement is kept here so neither is mistaken for the other. **Legend self-recovery scores 76–83%**: a legend glyph is shrunk to aerial scale and pushed back through matching to see whether it recovers its own class. That flatters the method, because the template and the test glyph come from the same pixels. The gap to 0.781 is how much of it comes from testing the method against itself.
 
+### Mapping onto the original, and sizing the box
+
+Recovered coordinates are positions on a screenshot, which is the photograph shrunk into a window. `mapping.py` places them on the original using the registration transform, at sub-pixel accuracy.
+
+![mapped onto the original](results/figures/fig_mapping_to_original.png)
+
+*Dots read off the screenshot, placed on the clean full-resolution photograph.*
+
+The survey recorded a point per bird and never an extent, so no box size can be read off the data. `birdsize.py` measures it from the imagery, per frame, because eleven years of surveys flew focal lengths from 28mm to 300mm and the same species spans 10px on one photograph and 41px on another.
+
+![boxes on birds](results/figures/fig_box_closeup.png)
+
+Around each dot it cuts a patch from the clean original, compares lightness against the patch's own median so a pale bird on grass and a dark bird on sand both register, and measures the long side of the resulting shape. Dividing known species body lengths by the measured size gives **1.3 to 4.0 cm per pixel**, which is what these surveys fly, and the camera EXIF predicts that spread independently from its focal lengths and pixel pitches.
+
+### The dataset
+
+```
+results/dataset/          25 benchmark frames        6,420 boxes
+results/dataset_scaled/  413 frames drawn fresh    118,270 boxes
+```
+
+Every decision in this pipeline was checked against those 25 benchmark frames, so numbers measured there are optimistic by construction. The scaled run took 1,197 candidates stratified across seven survey years and three density bands and put them through the same pipeline untouched.
+
+**The quality figures did not move at eighteen times the size.** Species resolution read 0.648 on 25 frames and 0.650 on 413; box size was measurable on 96% of frames before and 98% after.
+
+Every row carries `frame` and `legend_row`, which together form a stable key, so correcting one legend row fixes every dot on it.
+
+![every exported frame](results/figures/fig_box_per_frame.png)
+
+*Every exported frame drawn on one page. A sample that happens to contain the easy cases will confirm whatever it is shown, so the figure draws all of them.*
+
+### Training
+
+Fine-tuning DeepForest's bird model on 349 recovered photographs, 60 held out, three epochs:
+
+```
+                  pretrained    fine-tuned
+mAP@50              0.036         0.087       2.4x
+best F1             0.288         0.333       both at 0.20
+per frame           40 of 60 improved, 15 worse, 5 level
+```
+
+![training result](results/figures/fig17_e4_before_after_01343.png)
+
+*A held-out photograph holding 1,611 birds. Pretrained DeepForest finds 542; after training on the recovered annotations, 1,268.*
+
+![training result, second frame](results/figures/fig18_e4_before_after_0296.png)
+
+*The more informative frame. Here the fine-tuned model drew **fewer** boxes than pretrained, 828 against 1,103, and still found nearly twice as many birds, 373 against 200. It is not drawing more, it is drawing better.*
+
+Precision and recall rise together at three of the four thresholds, which distinguishes better boxes from merely more of them, and the gain is spread across the test set rather than carried by a few frames. Scoring is against the recovered annotations on photographs the model never trained on. An mAP@50 of 0.087 is a low base: these birds are 16 to 54 pixels on photographs over 5,000 pixels wide, which is the small-object regime where mAP is punishing.
+
+Full detail in [`docs/training_analysis.md`](docs/training_analysis.md).
+
 ## The benchmark
 
 An earlier four-image set was small enough to overfit, and it used the wrong ground truth. Reading the counting tool's own *Total Count* field settled which column is correct: the dot count is `category_sum`, the sum of the per-class columns, not `total_birds`. `total_birds` excludes chicks and undercounts by up to 57%.
@@ -222,10 +288,14 @@ src/align.py        register the clean original onto the screenshot
 src/subtract.py     annotations as image difference; turn ink into dot candidates
 src/select.py       which frames to trust, from the reported-to-detected ratio alone
 src/classify.py     Lab colour anchoring per row, NCC shape matching, capacity per class
+src/mapping.py      screenshot pixels to original photograph pixels
+src/birdsize.py     measure bird size per frame to set the box
 scripts/            benchmark builders, evaluation harnesses, figure generators
-tests/              211 tests
+tests/              236 tests
 data/labels/        1,648 hand-labelled dots across 12 frames
-notebook/           the earlier Colab prototype, stages 3 to 7
+results/dataset*/   the exported DeepForest annotations
+blog/               the six-part write-up of this project
+notebook/           Colab notebooks for the training runs
 docs/learnings.md   what went wrong and why
 ```
 
@@ -237,7 +307,7 @@ docs/learnings.md   what went wrong and why
 pip install -r requirements.txt          # full
 pip install pytest numpy opencv-python scikit-image PyYAML scipy   # tests only
 
-pytest tests/ -q                         # 211 passing
+pytest tests/ -q                         # 236 passing
 
 python scripts/build_manifest.py         # survey counts, ~1.4 MB
 python scripts/build_benchmark.py --per-cell 3   # the 63 pairs, ~472 MB
@@ -263,25 +333,13 @@ All tunable parameters live in `config.yaml`.
 
 ## About this work
 
-Built with guidance from the DeepForest maintainers and past contributors, who walked me through the open-source contribution process as well as the research. Before writing pipeline code I spent two weeks studying the data, and I would do that again: roughly 40% of the time on this project has been measurement rather than building, and almost every parameter in `config.yaml` traces back to something measured rather than guessed.
+Roughly 40% of the time on this project went on measurement rather than building, and almost every parameter in `config.yaml` traces back to something measured rather than guessed.
 
-The pipeline has been through several detector versions, four training experiments, and a number of approaches I tested and dropped. I wrote up each dropped approach with its root cause, which turned out to matter: two of them had been abandoned for the wrong reason. OCR is the clearest case. I rejected it at 4% precision, but that test ran on a fixture 2.3× smaller than a real screenshot, and at full resolution it works.
+Every dropped approach was written up with its root cause, which turned out to matter: two were abandoned for the wrong reason and later reopened. OCR is the clearest case, rejected at 4% precision on a test fixture 2.3× smaller than a real screenshot, and working at full resolution.
 
-The lesson I keep relearning is to check what is actually being measured before trusting the number. Detection was scored against the wrong CSV column for weeks, and the four-image test set was small enough that tuning against it looked like progress.
+The recurring lesson is to check what is actually being measured before trusting the number. Detection was scored against the wrong CSV column for weeks, and a count metric reading a healthy 1.24× was hiding a bug that deleted a quarter of all real markers.
 
-## The earlier prototype
-
-`notebook/prototype_v1.ipynb` is a 23-section prototype that runs in Colab on a T4 GPU in about 45 minutes. Stages 3 to 7 still live there and have not yet been rewritten as modules: coordinate mapping, SAM 3 validation, DeepForest training and export.
-
-![coordinate mapping](results/cell8_mapping.png)
-
-Stage 4 is the one that matters next: dots read off the screenshot, placed onto the clean original. SIFT homography puts them within about 0.5px; the height-ratio fallback used when SIFT fails is roughly 30px out, and that error is what limited training.
-
-Its numbers were measured differently from the ones above and are not comparable. Detection there was scored at 70.8% on 30 random images, against `total_birds` and using CSV counts as a pipeline input. Both of those are now known to be wrong: `total_birds` is the wrong column, and feeding the pipeline the answer it is meant to produce is not a fair test. The 63-pair benchmark replaced it.
-
-What the prototype did establish still holds. Training on 920 SIFT-mapped annotations at 0.5px accuracy improved on pretrained DeepForest by 29% in max score, while training on all 3,851 annotations including entries with about 30px position error made the model worse. Position accuracy matters more than the amount of data, which is why registration quality is gated rather than assumed.
-
-Details: [docs/training_analysis.md](docs/training_analysis.md).
+Built with guidance from the DeepForest maintainers at Weecology, and with thanks to [The Water Institute](https://thewaterinstitute.org/) for the archive and for their input in [discussion #6](https://github.com/vickysharma-prog/Recovering-computer-vision-annotations/discussions/6).
 
 ## What did not work
 
@@ -316,4 +374,27 @@ Five more were measured while building the classification stage:
 | Let the species matcher accept two edits instead of one | `nest` becomes the species code `BNST`. Coverage bought with a wrong species is a regression. |
 | Take the Name\|Count divider from the first gridline right of the marker | The geometry is right and the fix broke classification twice, 0.861 to 0.634 and 0.861 to 0.600. Moving the name boundary changes the parsed `class_name`, and row identity is keyed on that. It is a classification change wearing a legend-parsing disguise, and it has to be scored on `eval_localisation.py` rather than on name coverage. |
 
-Full list: [docs/learnings.md](docs/learnings.md).
+Full list with root causes: [docs/learnings.md](docs/learnings.md).
+
+## Documentation
+
+| | |
+|---|---|
+| [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) | Current state, start here |
+| [`docs/learnings.md`](docs/learnings.md) | Every dead end, with its root cause |
+| [`docs/training_analysis.md`](docs/training_analysis.md) | The training runs in full |
+| [`docs/labelling_findings.md`](docs/labelling_findings.md) | How the ground truth was built |
+| [`docs/legend_findings.md`](docs/legend_findings.md) | Legend parsing and OCR |
+| [`blog/`](blog/) | The six-part write-up |
+
+## Read more
+
+**Blog series** — the full story of this project in six posts, from the data forensics through to the trained model:
+**[vickysharma.hashnode.dev](https://vickysharma.hashnode.dev/)**
+
+**Open source contributions** — my pull requests and issues across DeepForest and other organisations:
+**[github.com/search?q=author:vickysharma-prog](https://github.com/search?q=author%3Avickysharma-prog&type=pullrequests&s=created&o=desc)**
+
+## License
+
+MIT. See [LICENSE](LICENSE).

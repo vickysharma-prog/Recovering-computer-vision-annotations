@@ -267,3 +267,6 @@ results/dataset_scaled/annotations_full.csv
 results/training/
 notebook/e4_training.ipynb
 notebook/e4_training_kaggle.ipynb
+
+# blog working images (duplicates of results/ figures, kept local for publishing)
+blog/images/
