@@ -372,12 +372,10 @@ Full list with root causes: [docs/learnings.md](docs/learnings.md).
 
 | | |
 |---|---|
-| [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) | Current state, start here |
 | [`docs/learnings.md`](docs/learnings.md) | Every dead end, with its root cause |
-| [`docs/training_analysis.md`](docs/training_analysis.md) | The training runs in full |
-| [`docs/labelling_findings.md`](docs/labelling_findings.md) | How the ground truth was built |
-| [`docs/legend_findings.md`](docs/legend_findings.md) | Legend parsing and OCR |
-| [`blog/`](blog/) | The six-part write-up |
+| [`docs/training_analysis.md`](docs/training_analysis.md) | The training run in full |
+| [`docs/labelling_findings.md`](docs/labelling_findings.md) | How the hand-labelled ground truth was built |
+| [`blog/`](blog/) | The six-part write-up of the project |
 
 ## Read more
 
