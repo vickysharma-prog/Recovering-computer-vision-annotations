@@ -272,14 +272,6 @@ An earlier four-image set was small enough to overfit, and it used the wrong gro
 
 The current benchmark is **63 stratified pairs**: 7 years × 3 density bands × 3 images, across 40 colonies, with dot counts from 7 to 2,037. Density band means the number of annotation dots on the image, not the number of colours: sparse is 5–50, medium 51–300, dense 301 and above. Sampling by band keeps the dense tail in, because that is where detection was always weakest. Detection and alignment are scored on the 60 of those 63 whose screenshot and original are both cached locally.
 
-### The ground truth needs checking too
-
-One dense frame looked like a bad regression, 450 dots down to 9. Opening it showed why.
-
-![ground truth artifact](results/report_fig/fig_artifact.jpg)
-
-It is a "No photo coverage for this area" frame. There are no dots on it at all, only survey polygons and a text box. Its `category_sum` of 450 is a written estimate. The old detector scored 288 by counting polygon lines.
-
 ## Repository structure
 
 ```
