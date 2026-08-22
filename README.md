@@ -182,7 +182,7 @@ Frames that fail are mostly sparse scenes over textured ground. A mangrove colon
 
 Four steps decide where a dot goes.
 
-**Colour picks the candidate rows**, using the palette that image's own dialog uses, in Lab space. A legend glyph is drawn crisply on a white table cell; the same marker in the aerial is a few pixels of thin stroke over vegetation at a quarter of the resolution, so its measured colour drifts. That drift is corrected **per row, not per frame**. On `5745` the frame-wide median difference is `a = −12.5` while row 0 needs `−29.4` and row 2 needs `−11.0`. The glyph explains it: a thin asterisk mixes with whatever it sits on, where a filled circle keeps its own colour. On `00620` two rows of the same species and the same colour need `L = −84` and `L = −16`.
+**Colour picks the candidate rows**, using the palette that image's own dialog uses, in Lab space. A legend glyph is drawn crisply on a white table cell; the same marker in the aerial is a few pixels of thin stroke over vegetation at a quarter of the resolution, so its measured colour drifts. That drift is corrected **per row, not per frame**. On `5745` the frame wide median difference is `a = −12.5` while row 0 needs `−29.4` and row 2 needs `−11.0`. The glyph explains it: a thin asterisk mixes with whatever it sits on, where a filled circle keeps its own colour. On `00620` two rows of the same species and the same colour need `L = −84` and `L = −16`.
 
 **A template match ranks them.** Normalised cross-correlation against the 24×24 template cut from each candidate row, with colour agreement folded into the score, so a dot sitting on a row's colour outranks one that barely reached the margin.
 
