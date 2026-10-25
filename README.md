@@ -4,7 +4,7 @@
 
 Between 2010 and 2021, surveyors counted birds in Gulf of Mexico aerial photographs using a point-counting tool. The tool drew a coloured dot on the photograph for every bird and saved a screenshot. It never saved the coordinates. What remains is **18,304 screenshots** carrying 2.81 million bird observations baked into the pixels, and the clean high-resolution photographs they were drawn on.
 
-This project reads them back out. It finds each dot, determines its species and category from the image's own legend, maps it onto the original photograph, and exports DeepForest-ready training data.
+This project reads them back out. It finds each dot, determines its species and category from the image's own legend, maps it onto the original photograph, and exports DeepForest-ready training data
 
 ![the problem](results/cell1_study_images.png)
 
