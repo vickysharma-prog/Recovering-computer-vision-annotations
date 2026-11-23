@@ -343,3 +343,29 @@ class TestDialogAreaBound:
         frac = (box[2] * box[3]) / float(img.shape[0] * img.shape[1])
         monkeypatch.setattr(legend, "_DIALOG_MAX_AREA", frac * 0.5)
         assert locate_dialog(img) is None
+
+
+class TestCountStrip:
+    def test_gridline_removed_digit_kept(self):
+        """A full-height gridline goes; a digit stroke spanning 2/3 of the height stays."""
+        from src.legend import _clean_count_strip
+        strip = np.full((15, 60), 230, np.uint8)
+        strip[:, 2] = 40                     # gridline at the cell edge
+        strip[3:13, 40] = 30                 # vertical stroke of a '1'
+        out = _clean_count_strip(strip)
+        assert out is not None and (out < 110).any()
+        assert out.shape[1] < 10             # cropped to the digit, gridline gone
+
+    def test_empty_cell_is_none(self):
+        from src.legend import _clean_count_strip
+        assert _clean_count_strip(np.full((15, 60), 230, np.uint8)) is None
+
+
+class TestTitleCheck:
+    def test_ocr_slips_still_match(self):
+        from src.title_check import nums, file_number
+        assert 1108 in nums("28May201.2Cam1Card1. 1.108.JPG. (1/1)")
+        assert 76 in nums("Camera. 2.076.JPG")
+        assert 157 in nums("cameracard3157-PG (1)")
+        assert 43 not in nums("17May2011Camera1Card2 543.JPG (1/1)")
+        assert file_number("17May11Camera1-Card3-0043") == 43

@@ -215,3 +215,26 @@ class TestDotCandidates:
         for (cx, cy, *_rest) in got:
             assert abs(cx - 45) < 10 and abs(cy - 45) < 10, \
                 "kept a desaturated (non-marker) blob"
+
+
+class TestLineFilter:
+    def _labels(self):
+        """Component 1: a 200x3 px transect line. Component 2: a 7x7 px marker."""
+        labels = np.zeros((300, 400), np.int32)
+        labels[150:153, 50:250] = 1
+        labels[50:57, 300:307] = 2
+        blobs = [(1, 0, 0, 50, 150, 200, 3, 600), (2, 0, 0, 300, 50, 7, 7, 49)]
+        return labels, blobs
+
+    def test_zone_covers_points_near_the_line_only(self):
+        from src.subtract import _line_zone
+        zone = _line_zone(*self._labels())
+        assert zone[157, 100]          # 5 px below the line: a fragment here is dropped
+        assert not zone[163, 100]      # 11 px below: kept
+        assert not zone[53, 303]       # the marker is not a line
+
+    def test_no_line_no_zone(self):
+        from src.subtract import _line_zone
+        labels, blobs = self._labels()
+        labels[labels == 1] = 0
+        assert _line_zone(labels, blobs[1:]) is None

@@ -71,6 +71,9 @@ _TEXT_MIN_RUNS = _CONFIG.get("row_text_min_runs", 3)
 # letters, but OCR routinely drops the leading one; at 4 such a token never reaches
 # the matcher. SPECIES_MIN_TOKEN=4 restores the old gate for A/B.
 _SPECIES_MIN_TOKEN = int(os.environ.get("SPECIES_MIN_TOKEN", "3"))
+_DIALOG_SHARE = os.environ.get("DIALOG_SHARE", "1") == "1"
+_COUNT_GEOM = os.environ.get("COUNT_GEOM", "1") == "1"
+_COUNT_OCR = os.environ.get("COUNT_OCR", "comb")    # "comb" | "orig"
 _SQUARE_EXTENT = _CONFIG.get("square_extent", 0.72)
 
 
@@ -712,12 +715,20 @@ def locate_dialog(rgb: np.ndarray) -> Optional[tuple[int, int, int, int]]:
             continue
         inside = [z for z in blobs if x <= z[0] <= x + bw and y <= z[1] <= y + bh]
         inl, mx, y0, y1, pitch = _column_ladder(inside, msize)
-        if inl >= _LADDER_MIN and (best is None or inl > best[0]):
-            best = (inl, mx, y0, y1, pitch, x + bw)
+        if inl < _LADDER_MIN:
+            continue
+        # DIALOG_SHARE=1 (default): rank panels by how much of their coloured ink IS the column.
+        # A grey beach or sea passes the flat-grey test, and the colony on it holds
+        # hundreds of markers, some of which line up by chance into a column longer
+        # than the real legend; on `4762` and `0639` that won and the box landed on
+        # the birds. In a real dialog nearly every coloured blob is a legend marker.
+        rank = (inl / len(inside), inl) if _DIALOG_SHARE else (inl,)
+        if best is None or rank > best[0]:
+            best = (rank, mx, y0, y1, pitch, x + bw)
 
     if best is None or best[1] is None:
         return None
-    inl, mx, y0, y1, pitch, panel_right = best
+    _rank, mx, y0, y1, pitch, panel_right = best
     x0 = int(max(0, mx - msize * 11))
     # Right edge: the marker-relative offset (mx + msize*30) falls short when the
     # Name column is wide -- long class names push the Count column further right
@@ -1161,7 +1172,19 @@ def attach_class_names(
     # is a classification change and must be scored on `eval_localisation.py`, with
     # `5745` (0.861) and `0027` (0.877) as the gate.
     gridlines = _column_gridlines(gray)
-    if len(gridlines) >= 3 and gridlines[2] - gridlines[1] >= 15:
+    if _COUNT_GEOM:
+        # COUNT_GEOM=1 (default): place the divider from the markers rather than by index. An
+        # extra gridline to the left (the button panel's edge, the window frame)
+        # shifts every index, and on 2026-11-23 that put the divider left of the
+        # markers on 3 of 8 inspected dialogs, so the Count strip read names.
+        # The divider is the first gridline that clears the marker column and leaves
+        # room for a name; the Count column ends at the next gridline.
+        mx = max(e.cx for e in entries)
+        after = [g for g in gridlines if g > mx + pitch * 2]
+        name_count_div = after[0] if after else None
+        nxt = [g for g in after[1:] if g - after[0] >= 15] if after else []
+        right_border = nxt[0] if nxt else dw
+    elif len(gridlines) >= 3 and gridlines[2] - gridlines[1] >= 15:
         name_count_div, right_border = gridlines[1], gridlines[2]
     else:
         name_count_div, right_border = None, dw
@@ -1204,7 +1227,63 @@ def _ocr_line(ocr, strip: np.ndarray) -> str:
         return ""
 
 
+def _clean_count_strip(strip: np.ndarray) -> Optional[np.ndarray]:
+    """Blank out cell borders and gridlines, then crop to the ink.
+
+    Only lines spanning 90% of the strip count as lines: a 15px strip holds 10px
+    digits, so at 60% the stroke of a 1, 4 or 7 was erased as a gridline.
+    """
+    g = strip.copy()
+    if g.shape[0] >= 3:
+        g[(g < 110).mean(axis=1) > 0.9, :] = 255
+    g[:, (g < 110).mean(axis=0) > 0.9] = 255
+    ys, xs = np.where(g < 140)
+    if ys.size == 0:
+        return None
+    return g[max(0, ys.min() - 1):ys.max() + 2, max(0, xs.min() - 1):xs.max() + 2]
+
+
+def _ocr_count_clean(ocr, strip: np.ndarray) -> Optional[int]:
+    """Count read from a cleaned strip, trying single-line, word, then character mode.
+
+    On 3,772 count strips from 301 dev frames this reads 0.566 of rows against
+    0.426, and frames whose read counts sum to the survey rise 0.103 -> 0.173.
+    Where both readers return a number they disagree on 16%, and an eye check split
+    those evenly, so `COUNT_OCR=comb` keeps the original read and only fills gaps.
+    """
+    if strip.size == 0 or strip.shape[1] < 6:
+        return None
+    if strip.shape[1] > 145:
+        strip = strip[:, -80:]
+    g = _clean_count_strip(strip)
+    if g is None:
+        return 0 if int((strip < 110).sum()) < 6 else None
+    big = cv2.resize(g, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+    big = cv2.threshold(big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    big = cv2.copyMakeBorder(big, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=255)
+    for psm in (7, 8, 10):
+        try:
+            txt = ocr.image_to_string(
+                big, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+        except Exception:
+            return None
+        digits = "".join(ch for ch in txt if ch.isdigit())
+        if digits:
+            return int(digits)
+    return None
+
+
 def _ocr_count(ocr, strip: np.ndarray) -> Optional[int]:
+    """The original reader, with the cleaned reader filling the rows it leaves blank
+    (COUNT_OCR=comb). Using the cleaned reader alone was measured and lost: where both
+    read a number they disagree on 16% of rows, split evenly on inspection."""
+    first = _ocr_count_orig(ocr, strip)
+    if _COUNT_OCR == "comb" and first is None:
+        return _ocr_count_clean(ocr, strip)
+    return first
+
+
+def _ocr_count_orig(ocr, strip: np.ndarray) -> Optional[int]:
     """
     Read the integer in a Count-column strip (digit whitelist).
 

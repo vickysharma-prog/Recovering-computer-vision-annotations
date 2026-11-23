@@ -34,11 +34,13 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
+from typing import Optional
 import yaml
 
 from src.align import AlignResult, warp_to_screenshot
@@ -94,6 +96,16 @@ _EDGE_MARGIN = _CONFIG.get("edge_margin", 2)       # shift wrap-around guard
 # removes that noise AND un-poisons the modal-size estimate, which otherwise
 # collapses when noise blobs outvote the real markers.
 _MARKER_SAT_MIN = _CONFIG.get("marker_sat_min", 50)
+# Map ink: transect lines and area outlines are drawn in the markers' own palette, so
+# colour cannot reject them, and where a line breaks over vegetation its fragments
+# pass as markers. The line's long body survives as one thin component; dots within
+# `line_margin` px of such a component are dropped. On by default (LINE_FILTER=0 disables).
+_LINE_FILTER = os.environ.get("LINE_FILTER", "1") == "1"
+_MODAL = os.environ.get("MODAL", "median")            # "median" | "dt" (distance transform)
+_MEDIAN_MIN_BLOBS = _CONFIG.get("median_min_blobs", 5)
+_LINE_MIN_LEN = _CONFIG.get("line_min_len", 40)       # px, longer than any marker run
+_LINE_MIN_ASPECT = _CONFIG.get("line_min_aspect", 6.0)
+_LINE_MARGIN = _CONFIG.get("line_margin", 6)          # px
 
 
 # ─────────────────────────────────────────────────────
@@ -311,7 +323,9 @@ def _marker_area(mask: np.ndarray, blobs: list) -> float:
 
 
 def dot_candidates(result: SubtractResult,
-                   min_area: int = 3) -> list[tuple[float, float, int, int, int]]:
+                   min_area: int = 3,
+                   diagnostics: Optional[dict] = None,
+                   ) -> list[tuple[float, float, int, int, int]]:
     """Blobs from the ink mask that plausibly are markers.
 
     Subtraction yields *all* annotation ink, which includes things that are not
@@ -368,9 +382,23 @@ def dot_candidates(result: SubtractResult,
     # Size estimate and splitting run on the gated ink only, so a discarded water
     # expanse can neither set the modal size nor be split into phantom markers.
     gated = np.isin(labels, [b[0] for b in blobs]).astype(np.uint8) * 255
-    modal = _marker_area(gated, blobs)
+    # MODAL=median (default): the median gated blob area. Measured against 1,594 hand-labelled
+    # markers on 12 frames, it lands within 10% of the true single-marker footprint on
+    # 10 of them (median |log2 error| 0.06), while the distance-transform peak below
+    # reads the stroke half-width of outline glyphs and is ~5x small (error 2.44).
+    # Fused groups hold 1.07 markers' area per marker, so area/size counts them.
+    # A median needs a population: with a handful of blobs (one fused run, say) it
+    # returns the run itself and nothing splits, so fall back to the distance
+    # transform, which still reads a filled marker's radius through fusion.
+    modal = (max(float(np.median([b[7] for b in blobs])), 4.0)
+             if _MODAL == "median" and len(blobs) >= _MEDIAN_MIN_BLOBS
+             else _marker_area(gated, blobs))
+    if diagnostics is not None:
+        diagnostics["modal_area"] = modal
+        diagnostics["blobs_after_sat_gate"] = len(blobs)
 
     out: list[tuple[float, float, int, int, int]] = []
+    near_line = _line_zone(labels, blobs) if _LINE_FILTER else None
     for (i, cx, cy, x0, y0, w, h, area) in blobs:
         elongation = max(w, h) / max(min(w, h), 1)
         if area >= 1.5 * modal and elongation <= 4.0:
@@ -395,4 +423,31 @@ def dot_candidates(result: SubtractResult,
                 continue
         if elongation <= 2.0 and 0.35 * modal <= area <= 3.0 * modal:
             out.append((cx, cy, w, h, area))
+    if near_line is not None:
+        hgt, wid = near_line.shape
+        out = [c for c in out
+               if not near_line[min(int(c[1]), hgt - 1), min(int(c[0]), wid - 1)]]
     return out
+
+
+def _line_zone(labels: np.ndarray, blobs: list) -> Optional[np.ndarray]:
+    """Pixels within `_LINE_MARGIN` of a long thin component, or None if there is none.
+
+    Thin is judged on the minimum-area rectangle, so a diagonal line counts: its
+    axis-aligned box is square, its rotated one is a sliver.
+    """
+    zone = None
+    for (i, _cx, _cy, x0, y0, w, h, _area) in blobs:
+        if max(w, h) < _LINE_MIN_LEN:
+            continue
+        pts = cv2.findNonZero((labels[y0:y0 + h, x0:x0 + w] == i).astype(np.uint8))
+        (_c, (rw, rh), _a) = cv2.minAreaRect(pts)
+        if max(rw, rh) < _LINE_MIN_LEN or max(rw, rh) < _LINE_MIN_ASPECT * max(min(rw, rh), 1):
+            continue
+        if zone is None:
+            zone = np.zeros(labels.shape, np.uint8)
+        zone[y0:y0 + h, x0:x0 + w][labels[y0:y0 + h, x0:x0 + w] == i] = 1
+    if zone is None:
+        return None
+    k = 2 * _LINE_MARGIN + 1
+    return cv2.dilate(zone, np.ones((k, k), np.uint8)) > 0
