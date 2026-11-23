@@ -62,11 +62,14 @@ def main() -> None:
     ap.add_argument("--quality", type=int, default=88, help="JPEG quality")
     ap.add_argument("--width", type=int, default=2,
                     help="box line width in pixels at full resolution")
+    ap.add_argument("--dataset", default=str(DATASET), help="annotations_full.csv to draw")
+    ap.add_argument("--out", default=str(OUT), help="output folder")
     args = ap.parse_args()
+    dataset, out_dir = Path(args.dataset), Path(args.out)
 
-    if not DATASET.exists():
-        raise SystemExit(f"{DATASET} not found. Run scripts/export_dataset.py first.")
-    full = pd.read_csv(DATASET)
+    if not dataset.exists():
+        raise SystemExit(f"{dataset} not found. Run scripts/export_dataset.py first.")
+    full = pd.read_csv(dataset)
     e = full[full.exported]
     frames = sorted(e.frame.unique())
     if args.only:
@@ -74,7 +77,7 @@ def main() -> None:
         if not frames:
             raise SystemExit(f"no exported frame matching {args.only!r}")
 
-    OUT.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     cards = []
     for name in frames:
         g = e[e.frame == name]
@@ -86,7 +89,7 @@ def main() -> None:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         h, w = img.shape[:2]
 
-        out_path = OUT / f"{name}.jpg"
+        out_path = out_dir / f"{name}.jpg"
         cv2.imwrite(str(out_path),
                     cv2.cvtColor(draw(img, g, args.width), cv2.COLOR_RGB2BGR),
                     [cv2.IMWRITE_JPEG_QUALITY, args.quality])
@@ -108,7 +111,7 @@ def main() -> None:
         f'{n} boxes &middot; {note} &middot; {kb} KB</div></a>'
         for nm, fn, w, h, n, note, kb in cards)
 
-    (OUT / "index.html").write_text(f"""<!doctype html><meta charset="utf-8">
+    (out_dir / "index.html").write_text(f"""<!doctype html><meta charset="utf-8">
 <title>Exported boxes, full resolution</title>
 <style>
  body{{font:15px/1.5 system-ui,Segoe UI,sans-serif;margin:0;background:#111;color:#eee}}
@@ -134,8 +137,8 @@ def main() -> None:
 </div>
 """, encoding="utf-8")
 
-    print(f"\nwrote {len(cards)} overlays to {OUT}")
-    print(f"open {OUT / 'index.html'}")
+    print(f"\nwrote {len(cards)} overlays to {out_dir}")
+    print(f"open {out_dir / 'index.html'}")
 
 
 if __name__ == "__main__":

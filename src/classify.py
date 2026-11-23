@@ -460,6 +460,7 @@ def detect_dots_subtract(
     original_rgb: np.ndarray,
     alignment: AlignResult,
     exclude: Optional[tuple[int, int, int, int]] = None,
+    diagnostics: Optional[dict] = None,
 ) -> list[AerialDot]:
     """
     Detect dots by image difference (the primary path), then read each one's
@@ -484,7 +485,12 @@ def detect_dots_subtract(
     from src.subtract import extract_annotations, dot_candidates
 
     sub = extract_annotations(screenshot_rgb, original_rgb, alignment)
-    cands = dot_candidates(sub)
+    cands = dot_candidates(sub, diagnostics=diagnostics)
+    if diagnostics is not None:
+        # Hand back what was already computed, so a batch run can say where a frame
+        # lost its dots without paying for the difference image twice.
+        diagnostics["sub"] = sub
+        diagnostics["candidates"] = len(cands)
     centers = [(cx, cy) for (cx, cy, _w, _h, _a) in cands]
     if exclude is not None:
         ex, ey, ew, eh = exclude

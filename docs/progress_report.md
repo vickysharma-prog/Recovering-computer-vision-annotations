@@ -1694,9 +1694,67 @@ is 20 and a standalone validate runs at epoch 0.
 
 ---
 
+## Session 2026-11-23: 5,000 frames, six measured changes, PR #13
+
+The goal for this round was to recover more correct annotations, not to train a model.
+I drew 5,000 frames balanced across 7 survey years and 3 density bands: the 1,076 from
+August plus 3,924 new. 4,000 became the dev set and 1,000 a sealed test set, run only at
+the start and the end. Runs happen on Kaggle through `scripts/kaggle_batch.py`, five
+kernels at a time, about an hour for the dev set.
+
+```
+                                   before    after
+test set recovery (877 frames)      32.2%    50.2%
+same, corpus-weighted               31.3%    58.5%
+test frames giving annotations        279      642
+precision, 12 labelled frames       0.315    0.588
+recall, same                        0.630    0.749
+class per dot, same                 0.703    0.780
+```
+
+Each change, on 3,705 dev frames:
+
+```
+B0     baseline                                              33.9%
+E2     confidence tiers instead of dropping frames           40.2%
+E3     over-detecting frames judged on legend dots; line filter 47.3%
+E4     dialog found by the share of a panel's colour on the legend column 51.3%
+E5     marker size from the median blob area                 49.1%
+E6     Count column from the markers; second digit reader    48.4%
+final  all, plus a fix for tier D frames                     55.0%
+```
+
+E5 and E6 lower the raw count because they remove false dots: annotations above the
+survey count fall from 28,136 after E4 to 8,373 after E6.
+
+What was learned:
+
+- 418 of the 5,000 manifest screenshots (8%) are not in the S3 bucket.
+- About 2% of screenshots are filed against the wrong original. The title bar names the
+  real photo (`0043` shows `543`). A title mismatch plus SIFT inliers under 0.6 catches
+  most of them.
+- The Name|Count divider fix broke classification twice before because the old digit
+  reader failed on the moved strips. With a second reader filling blank rows, `5745`
+  holds at 0.778 and `0449` rises from 0.469 to 0.655.
+- Placement error on seeded labels is biased: 10 of the 12 label files started from the
+  pipeline's own dots. Only `0115` and `0401` measure it honestly; both improved.
+- Kaggle can mount the previous dataset version while a new one processes. One E4 run
+  silently used old code. Every kernel now checks a code fingerprint and stops on a
+  mismatch.
+
+Dataset: `results/dataset_5k/`, 742,690 boxes on 3,380 photographs, gzipped, each box
+tagged A to D. Full write-up in `docs/recovery_experiments.md`.
+
+Open: dense colonies of thin outline markers lose about 11,000 real markers under E5,
+because fused blobs raise the median blob area. Fixing it needs hand labels on 3 to 5
+dense frames.
+
 ## How to Resume
 
 ### Where things stand
+
+**Latest: 2026-11-23.** PR #13 (`feat/recovery-5k`) is open with the 5,000-frame round
+above; see `docs/recovery_experiments.md`. The notes below describe the state before it.
 
 `main` carries everything through the DeepForest CSV. PR #11 is merged. Deliverable #1
 (the recovery approach) and #2 (the dataset) are done; #3 (a model) has four measured
